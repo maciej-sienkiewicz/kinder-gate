@@ -5,14 +5,13 @@
     </style>
 
     <!-- Blocking screen: fullscreen, no system UI, shows on lock screen -->
+    <!-- Note: windowShowWhenLocked, windowDismissKeyguard, windowKeepScreenOn were removed
+         from the public API in Android 35. These are handled programmatically in BlockingActivity. -->
     <style name="Theme.KinderGate.Blocking" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowBackground">@color/blocking_background</item>
         <item name="android:statusBarColor">@color/blocking_background</item>
         <item name="android:navigationBarColor">@color/blocking_background</item>
-        <item name="android:windowShowWhenLocked">true</item>
-        <item name="android:windowDismissKeyguard">false</item>
-        <item name="android:windowKeepScreenOn">true</item>
     </style>
 
     <style name="Theme.KinderGate.SplashScreen" parent="Theme.SplashScreen">

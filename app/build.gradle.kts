@@ -85,6 +85,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.splash)
+    implementation(libs.material)
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))

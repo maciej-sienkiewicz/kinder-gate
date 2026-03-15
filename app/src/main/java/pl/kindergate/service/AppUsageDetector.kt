@@ -94,7 +94,7 @@ class AppUsageDetector @Inject constructor(
     private fun getViaAccessibilityService(): String? {
         // KinderGateAccessibilityService.lastForegroundPackage is updated
         // from the accessibility event thread. Read is atomic for String references.
-        return KinderGateAccessibilityService.lastForegroundPackage
+        return KinderGateAccessibilityService.lastForegroundPackage.get()
             .takeIf { it != null && it != context.packageName }
     }
 

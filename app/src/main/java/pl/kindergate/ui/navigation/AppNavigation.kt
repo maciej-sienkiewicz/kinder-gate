@@ -24,7 +24,7 @@ fun AppNavigation(
     navController: NavHostController = rememberNavController()
 ) {
     val onboardingVm: OnboardingViewModel = hiltViewModel()
-    val isOnboardingDone by onboardingVm.isOnboardingComplete.collectAsStateWithLifecycle()
+    val isOnboardingDone by onboardingVm.isOnboardingComplete.collectAsStateWithLifecycle(initialValue = false)
 
     val startDestination = if (isOnboardingDone) Screen.Dashboard.route else Screen.Onboarding.route
 
