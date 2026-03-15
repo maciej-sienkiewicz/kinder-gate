@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup rules: we explicitly exclude sensitive data from cloud backup.
+  PIN hash must never leave the device. Session data is device-specific.
+  Monitored app list CAN be backed up (parent preferences).
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="kindergate_secure.xml" />
+    <exclude domain="database" path="kindergate_events.db" />
+    <include domain="sharedpref" path="kindergate_config.xml" />
+</full-backup-content>

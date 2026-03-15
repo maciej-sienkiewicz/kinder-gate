@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AccessibilityService configuration for KinderGate.
+
+  Design decision: We request ONLY window state changes, not full content retrieval.
+  This limits the data we access to the minimum needed (foreground app package name)
+  and is important for Play Store review and user trust.
+
+  typeWindowStateChanged: fires when a new activity/window comes to foreground.
+  We use this to detect the active package when UsageStatsManager is unavailable
+  (some OEMs restrict usage stats on their ROM variants).
+
+  We do NOT request:
+  - TYPE_VIEW_CLICKED / TYPE_VIEW_FOCUSED: not needed, would be flagged as spy tool
+  - retrieveInteractiveWindows: not needed
+  - canRequestFilterKeyEvents: NOT set — we are NOT a keylogger
+-->
+<accessibility-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagReportViewIds"
+    android:canRetrieveWindowContent="false"
+    android:canRequestFilterKeyEvents="false"
+    android:canRequestTouchExplorationMode="false"
+    android:description="@string/accessibility_service_description"
+    android:notificationTimeout="100"
+    android:packageNames=""
+    android:settingsActivity=".MainActivity" />

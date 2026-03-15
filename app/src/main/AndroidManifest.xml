@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Core permissions -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Usage stats: required for foreground app detection. User must grant manually
+         in Settings > Apps > Special app access > Usage access -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- Draw over other apps: required for overlay-based blocking UI fallback.
+         Must be declared. User grants in Settings > Apps > Special app access > Display over other apps. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Battery optimization: request exemption so background service survives -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- Vibration for block trigger notification -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Package query: enumerate installed apps for monitoring setup -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Wake lock: keep CPU awake during monitoring -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application
+        android:name=".KinderGateApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.KinderGate"
+        tools:targetApi="31">
+
+        <!-- Main entry point for parent configuration -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Blocking screen: shown to child when PAUSE triggers.
+             - excludeFromRecents: prevents child from seeing it in recent apps
+             - showOnLockScreen: can show above lock screen
+             - noHistory: doesn't stay in back stack
+             - taskAffinity: separate task from parent config UI -->
+        <activity
+            android:name=".feature.blocking.BlockingActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:showOnLockScreen="true"
+            android:noHistory="true"
+            android:taskAffinity="pl.kindergate.blocking"
+            android:theme="@style/Theme.KinderGate.Blocking"
+            android:launchMode="singleInstance"
+            android:screenOrientation="portrait" />
+
+        <!-- Foreground monitoring service: the engine of the app.
+             SPECIAL_USE is the correct type for parental control monitoring. -->
+        <service
+            android:name=".service.MonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Parental control monitoring service that tracks active app usage time" />
+        </service>
+
+        <!-- Accessibility service: fallback detection for devices that restrict UsageStats.
+             Also used to detect Settings screen navigation (tamper detection). -->
+        <service
+            android:name=".service.KinderGateAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- Boot receiver: restarts monitoring after device reboot -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:exported="true">
+            <intent-filter android:priority="999">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <!-- HTC/Huawei specific boot action -->
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+                <!-- MIUI specific -->
+                <action android:name="com.miui.home.launcher.action.RESUME" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Package receiver: detects if monitored apps are installed/uninstalled -->
+        <receiver
+            android:name=".receiver.PackageEventReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>

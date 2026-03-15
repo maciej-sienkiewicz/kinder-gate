@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.KinderGate" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/background</item>
+    </style>
+
+    <!-- Blocking screen: fullscreen, no system UI, shows on lock screen -->
+    <style name="Theme.KinderGate.Blocking" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@color/blocking_background</item>
+        <item name="android:statusBarColor">@color/blocking_background</item>
+        <item name="android:navigationBarColor">@color/blocking_background</item>
+        <item name="android:windowShowWhenLocked">true</item>
+        <item name="android:windowDismissKeyguard">false</item>
+        <item name="android:windowKeepScreenOn">true</item>
+    </style>
+
+    <style name="Theme.KinderGate.SplashScreen" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/primary</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.KinderGate</item>
+    </style>
+</resources>

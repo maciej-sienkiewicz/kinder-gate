@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KinderGate</string>
+
+    <!-- Accessibility service -->
+    <string name="accessibility_service_label">KinderGate – kontrola rodzicielska</string>
+    <string name="accessibility_service_description">KinderGate używa Usługi Dostępności, aby wykrywać aktywną aplikację i wyświetlać ekran pauzy po upłynięciu dozwolonego czasu. Usługa nie odczytuje treści ekranu ani danych osobowych.</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_welcome_title">Witaj w KinderGate</string>
+    <string name="onboarding_welcome_subtitle">Kontrola czasu ekranowego, która naprawdę działa</string>
+    <string name="onboarding_step_of">Krok %1$d z %2$d</string>
+
+    <!-- Permissions -->
+    <string name="permission_usage_stats_title">Dostęp do statystyk użycia</string>
+    <string name="permission_usage_stats_desc">Wymagane do wykrywania aktywnej aplikacji. Przejdź do Ustawień i włącz dostęp dla KinderGate.</string>
+    <string name="permission_overlay_title">Wyświetlanie nad innymi aplikacjami</string>
+    <string name="permission_overlay_desc">Wymagane do wyświetlania ekranu PAUZA. Przejdź do Ustawień i włącz dostęp dla KinderGate.</string>
+    <string name="permission_notification_title">Powiadomienia</string>
+    <string name="permission_notification_desc">Wymagane do działania usługi w tle. Zezwól na powiadomienia od KinderGate.</string>
+    <string name="permission_battery_title">Optymalizacja baterii</string>
+    <string name="permission_battery_desc">Wyłącz optymalizację baterii dla KinderGate, aby usługa działała niezawodnie.</string>
+    <string name="permission_accessibility_title">Usługa dostępności (opcjonalne)</string>
+    <string name="permission_accessibility_desc">Zalecane jako kopia zapasowa wykrywania aplikacji. Poprawia niezawodność na urządzeniach Samsung, Xiaomi i Huawei.</string>
+    <string name="permission_grant">Udziel uprawnienia</string>
+    <string name="permission_granted">Udzielone ✓</string>
+    <string name="permission_skip">Pomiń (niezalecane)</string>
+
+    <!-- PIN -->
+    <string name="pin_setup_title">Ustaw PIN rodzica</string>
+    <string name="pin_setup_desc">PIN chroni ustawienia KinderGate. Zapamiętaj go – bez niego nie zmienisz konfiguracji.</string>
+    <string name="pin_confirm_title">Potwierdź PIN</string>
+    <string name="pin_enter_title">Wprowadź PIN rodzica</string>
+    <string name="pin_error_mismatch">PINy nie są zgodne. Spróbuj ponownie.</string>
+    <string name="pin_error_too_short">PIN musi mieć co najmniej 4 cyfry.</string>
+
+    <!-- App picker -->
+    <string name="app_picker_title">Wybierz monitorowane aplikacje</string>
+    <string name="app_picker_subtitle">Zaznacz aplikacje, po 60 sekundach których pojawi się PAUZA</string>
+    <string name="app_picker_search_hint">Szukaj aplikacji…</string>
+    <string name="app_picker_selected">Wybrane: %1$d</string>
+
+    <!-- Blocking screen -->
+    <string name="blocking_pause">PAUZA</string>
+    <string name="blocking_message">Czas na przerwę!</string>
+    <string name="blocking_ok">OK, rozumiem</string>
+    <string name="blocking_time_used">Używasz tej aplikacji od %1$d minut</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Panel rodzica</string>
+    <string name="dashboard_system_health">Stan ochrony</string>
+    <string name="dashboard_monitored_apps">Monitorowane aplikacje</string>
+    <string name="dashboard_today_sessions">Dzisiejsze pauzy</string>
+    <string name="dashboard_service_running">Ochrona aktywna</string>
+    <string name="dashboard_service_stopped">Ochrona wyłączona – dotknij, by naprawić</string>
+    <string name="dashboard_edit_apps">Zarządzaj aplikacjami</string>
+    <string name="dashboard_settings">Ustawienia</string>
+
+    <!-- Health status -->
+    <string name="health_ok">Wszystkie uprawnienia aktywne</string>
+    <string name="health_warning">Brakuje uprawnień – kliknij, aby naprawić</string>
+    <string name="health_critical">Ochrona wyłączona!</string>
+    <string name="health_missing_usage_stats">Brak dostępu do statystyk użycia</string>
+    <string name="health_missing_overlay">Brak uprawnień do wyświetlania nad aplikacjami</string>
+    <string name="health_missing_battery">Optymalizacja baterii może ograniczać działanie</string>
+    <string name="health_missing_accessibility">Usługa dostępności wyłączona (kopia zapasowa)</string>
+
+    <!-- Notification -->
+    <string name="notification_channel_monitor">Monitoring KinderGate</string>
+    <string name="notification_channel_monitor_desc">Powiadomienie o działaniu usługi monitoringu</string>
+    <string name="notification_monitor_title">KinderGate aktywny</string>
+    <string name="notification_monitor_text">Monitorowanie czasu ekranowego działa</string>
+    <string name="notification_channel_alert">Alerty KinderGate</string>
+    <string name="notification_channel_alert_desc">Powiadomienia o sabotażu i problemach</string>
+    <string name="notification_tamper_title">Uwaga: zmiana uprawnień</string>
+    <string name="notification_tamper_text">Ktoś wyłączył uprawnienia KinderGate. Sprawdź ustawienia.</string>
+
+    <!-- Common -->
+    <string name="continue_button">Dalej</string>
+    <string name="back_button">Wstecz</string>
+    <string name="save_button">Zapisz</string>
+    <string name="cancel_button">Anuluj</string>
+    <string name="done_button">Gotowe</string>
+    <string name="error_generic">Wystąpił błąd. Spróbuj ponownie.</string>
+</resources>
