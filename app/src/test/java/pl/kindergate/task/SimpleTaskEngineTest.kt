@@ -14,9 +14,11 @@ import pl.kindergate.data.engine.SimpleAdditionEvaluator
 import pl.kindergate.data.engine.SimpleTaskEngine
 import pl.kindergate.data.engine.SubtractionEvaluator
 import pl.kindergate.data.repository.InMemoryTaskRepository
+import pl.kindergate.domain.model.ChildProfile
 import pl.kindergate.domain.model.task.Task
 import pl.kindergate.domain.model.task.TaskContent
 import pl.kindergate.domain.model.task.TaskContext
+import pl.kindergate.domain.repository.ChildRepository
 
 /**
  * Unit tests for [SimpleTaskEngine].
@@ -31,8 +33,16 @@ class SimpleTaskEngineTest {
     @Before
     fun setUp() {
         val repo = InMemoryTaskRepository()
+        // Stub ChildRepository that always returns null (= all subjects/types enabled).
+        val childRepo = object : ChildRepository {
+            override suspend fun getChildren() = emptyList<ChildProfile>()
+            override suspend fun getChildById(id: String): ChildProfile? = null
+            override suspend fun upsertChild(child: ChildProfile) = Unit
+            override suspend fun deleteChild(id: String) = Unit
+        }
         engine = SimpleTaskEngine(
             taskRepository = repo,
+            childRepository = childRepo,
             evaluators = setOf(
                 SimpleAdditionEvaluator(),
                 SubtractionEvaluator(),

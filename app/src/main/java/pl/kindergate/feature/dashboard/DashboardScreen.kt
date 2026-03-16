@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
@@ -59,6 +60,7 @@ import pl.kindergate.ui.theme.HealthWarning
 fun DashboardScreen(
     onEditApps: () -> Unit,
     onEditChildProfile: () -> Unit,
+    onConfigureCategories: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -137,6 +139,11 @@ fun DashboardScreen(
                     profile = state.childProfile,
                     onEdit = onEditChildProfile
                 )
+            }
+
+            // Task categories card
+            item {
+                CategoryConfigCard(onConfigure = onConfigureCategories)
             }
 
             // Excluded apps section
@@ -364,6 +371,36 @@ private fun PermissionRow(
             ) {
                 Text("Udziel", style = MaterialTheme.typography.labelSmall)
             }
+        }
+    }
+}
+
+@Composable
+private fun CategoryConfigCard(onConfigure: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.School,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Typy zadań",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Włącz lub wyłącz przedmioty i typy ćwiczeń.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            OutlinedButton(onClick = onConfigure) { Text("Konfiguruj") }
         }
     }
 }

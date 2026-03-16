@@ -13,7 +13,7 @@ import pl.kindergate.data.local.db.entity.TamperEventEntity
 
 @Database(
     entities = [MonitoredAppEntity::class, BlockSessionEntity::class, TamperEventEntity::class, ChildEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

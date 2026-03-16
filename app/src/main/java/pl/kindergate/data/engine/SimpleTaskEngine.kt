@@ -1,5 +1,6 @@
 package pl.kindergate.data.engine
 
+import android.util.Log
 import pl.kindergate.domain.engine.TaskEngine
 import pl.kindergate.domain.engine.TaskEvaluator
 import pl.kindergate.domain.model.task.ChildProgress
@@ -8,6 +9,8 @@ import pl.kindergate.domain.model.task.LevelProgress
 import pl.kindergate.domain.model.task.Task
 import pl.kindergate.domain.model.task.TaskContext
 import pl.kindergate.domain.model.task.TaskSubject
+import pl.kindergate.domain.model.task.TaskType
+import pl.kindergate.domain.repository.ChildRepository
 import pl.kindergate.domain.repository.TaskRepository
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -16,26 +19,32 @@ import javax.inject.Singleton
 /**
  * MVP implementation of [TaskEngine] with simple adaptive difficulty.
  *
+ * ## Task filtering (per child)
+ * Before selecting a task the engine reads [ChildRepository] to get the active
+ * [pl.kindergate.domain.model.ChildProfile] for [childId]:
+ *   - [ChildProfile.enabledSubjects] empty → all subjects allowed
+ *   - [ChildProfile.enabledTaskTypes] empty → all task types allowed
+ *
+ * If the combined filter yields no candidates at the requested difficulty level the engine
+ * retries with lower levels before applying a safe fallback (simplest MATH task).
+ *
  * ## Difficulty adaptation (per child)
- * The engine tracks the current difficulty level per [childId] in memory.
  * After every [WINDOW_SIZE] submissions the window is evaluated:
- *   - All [WINDOW_SIZE] correct  → level up   (capped at [MAX_LEVEL])
+ *   - All [WINDOW_SIZE] correct          → level up   (capped at [MAX_LEVEL])
  *   - More than [FAILURE_THRESHOLD] wrong → level down (floored at [MIN_LEVEL])
- *   - Otherwise                  → stay
+ *   - Otherwise                          → stay
  *
  * ## History storage
  * MVP: [ConcurrentHashMap] – survives the Activity lifecycle but resets on process death.
- * Migration path: inject a [SessionRepository]-like TaskHistoryRepository backed by Room,
- * load history on first [getNextTask] call, flush on each [submitAnswer].
+ * Migration path: inject a TaskHistoryRepository backed by Room.
  *
  * ## Thread safety
- * [ConcurrentHashMap] provides safe concurrent reads/writes.
- * The adaptive-level computation is not atomic across concurrent submits, but this is
- * acceptable for a single-child MVP where only one coroutine submits at a time.
+ * [ConcurrentHashMap] provides safe concurrent reads/writes for the MVP single-child case.
  */
 @Singleton
 class SimpleTaskEngine @Inject constructor(
     private val taskRepository: TaskRepository,
+    private val childRepository: ChildRepository,
     private val evaluators: Set<@JvmSuppressWildcards TaskEvaluator>,
 ) : TaskEngine {
 
@@ -50,10 +59,31 @@ class SimpleTaskEngine @Inject constructor(
     override suspend fun getNextTask(childId: String, context: TaskContext?): Task {
         val level = resolveLevel(childId, context)
         activeLevels[childId] = level
-        return taskRepository.getRandomTask(
-            subject = TaskSubject.MATH,
-            difficultyLevel = level,
-        ) ?: error("No tasks available for subject=MATH, level=$level")
+
+        // Resolve allow-lists from the child's profile.
+        // Empty set in the profile ⇒ all entries of that dimension are allowed.
+        val profile = childRepository.getChildById(childId)
+        val allowedSubjects = profile?.enabledSubjects?.takeIf { it.isNotEmpty() }
+            ?: TaskSubject.entries.toSet()
+        val allowedTypes = profile?.enabledTaskTypes?.takeIf { it.isNotEmpty() }
+            ?: TaskType.entries.toSet()
+
+        // Try the desired level first, then fall back to lower levels to avoid getting stuck
+        // when the filter is narrow at a high difficulty.
+        for (tryLevel in level downTo MIN_LEVEL) {
+            val task = taskRepository.getRandomTaskFiltered(allowedSubjects, allowedTypes, tryLevel)
+            if (task != null) return task
+        }
+
+        // Safe fallback: the parent's configuration is overly restrictive – serve the
+        // simplest available math task so the child is never stuck on the blocking screen.
+        Log.w(
+            TAG,
+            "No tasks found for childId=$childId subjects=$allowedSubjects " +
+                "types=$allowedTypes level=$level – using MATH/L1 fallback",
+        )
+        return taskRepository.getRandomTask(TaskSubject.MATH, MIN_LEVEL)
+            ?: error("Task catalog is empty – at least one MATH/L1 task must exist")
     }
 
     override suspend fun submitAnswer(
@@ -68,7 +98,7 @@ class SimpleTaskEngine @Inject constructor(
 
         val result = evaluator.evaluate(task, answer)
         history.getOrPut(childId) { mutableListOf() }.add(result)
-        // Recalculate level immediately so the NEXT getNextTask call is adaptive
+        // Recalculate level immediately so the NEXT getNextTask call is already adaptive
         activeLevels[childId] = resolveLevel(childId, context = null)
         return result
     }
@@ -93,10 +123,10 @@ class SimpleTaskEngine @Inject constructor(
      *
      * Priority order:
      *   1. Existing active level (from previous adaptive decision).
-     *   2. [context.preferredDifficultyLevel] – used only on first call.
+     *   2. [context.preferredDifficultyLevel] – honoured only on the very first call.
      *   3. [MIN_LEVEL] fallback.
      *
-     * Adaptation only fires once [WINDOW_SIZE] answers are available.
+     * Adaptation fires only once [WINDOW_SIZE] answers are available.
      */
     private fun resolveLevel(childId: String, context: TaskContext?): Int {
         val baseLevel = activeLevels[childId]
@@ -116,13 +146,12 @@ class SimpleTaskEngine @Inject constructor(
         }
     }
 
-    private fun buildLevelProgress(results: List<EvaluationResult>): Map<Int, LevelProgress> {
-        // MVP: we don't embed difficulty level in EvaluationResult yet, so we return empty.
-        // Future: add difficultyLevel field to EvaluationResult and group here.
-        return emptyMap()
-    }
+    private fun buildLevelProgress(
+        @Suppress("UNUSED_PARAMETER") results: List<EvaluationResult>,
+    ): Map<Int, LevelProgress> = emptyMap() // Future: embed difficultyLevel in EvaluationResult
 
     companion object {
+        private const val TAG = "SimpleTaskEngine"
         internal const val MIN_LEVEL = 1
         internal const val MAX_LEVEL = 3
         /** Number of recent answers to inspect for adaptation. */

@@ -13,12 +13,14 @@ import pl.kindergate.feature.children.ChildProfileScreen
 import pl.kindergate.feature.dashboard.DashboardScreen
 import pl.kindergate.feature.onboarding.OnboardingScreen
 import pl.kindergate.feature.onboarding.OnboardingViewModel
+import pl.kindergate.feature.settings.CategoryConfigScreen
 
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
     data object Dashboard : Screen("dashboard")
     data object AppPicker : Screen("app_picker")
     data object ChildProfile : Screen("child_profile")
+    data object CategoryConfig : Screen("category_config")
 }
 
 @Composable
@@ -47,7 +49,8 @@ fun AppNavigation(
         composable(Screen.Dashboard.route) {
             DashboardScreen(
                 onEditApps = { navController.navigate(Screen.AppPicker.route) },
-                onEditChildProfile = { navController.navigate(Screen.ChildProfile.route) }
+                onEditChildProfile = { navController.navigate(Screen.ChildProfile.route) },
+                onConfigureCategories = { navController.navigate(Screen.CategoryConfig.route) },
             )
         }
 
@@ -60,6 +63,12 @@ fun AppNavigation(
         composable(Screen.ChildProfile.route) {
             ChildProfileScreen(
                 onSaved = { navController.popBackStack() },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.CategoryConfig.route) {
+            CategoryConfigScreen(
                 onBack = { navController.popBackStack() }
             )
         }

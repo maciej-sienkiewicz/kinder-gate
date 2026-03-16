@@ -42,7 +42,7 @@ import javax.inject.Singleton
  *   L2 – (a−b)×c  and  a×b±c
  *   L3 – nested parentheses, two-pair products, PEMDAS chains
  *
- * ## Letter-tracing tasks (subject = MATH, level = 1): A–Z
+ * ## Letter-tracing tasks (subject = WRITING, level = 1): A–Z
  *
  * Migration path to Room:
  *   Replace [InMemoryTaskRepository] binding in TaskModule – no domain changes needed.
@@ -69,6 +69,18 @@ class InMemoryTaskRepository @Inject constructor() : TaskRepository {
         catalog
             .filter { it.subject == subject && it.difficultyLevel == difficultyLevel }
             .randomOrNull()
+
+    override suspend fun getRandomTaskFiltered(
+        subjects: Set<TaskSubject>,
+        taskTypes: Set<TaskType>,
+        difficultyLevel: Int,
+    ): Task? = catalog
+        .filter { task ->
+            task.difficultyLevel == difficultyLevel &&
+                task.subject in subjects &&
+                task.taskType in taskTypes
+        }
+        .randomOrNull()
 
     companion object {
         const val TASK_SET_LEVEL_1 = "addition_level_1"
@@ -347,7 +359,7 @@ class InMemoryTaskRepository @Inject constructor() : TaskRepository {
         private fun letterTracing(letter: Char): Task = Task(
             id = "letter_$letter",
             source = TaskSource.APP_LIBRARY,
-            subject = TaskSubject.MATH,
+            subject = TaskSubject.WRITING,
             cognitiveSkill = CognitiveSkill.LETTER_RECOGNITION,
             difficultyMode = DifficultyMode.MANUAL,
             difficultyLevel = 1,
