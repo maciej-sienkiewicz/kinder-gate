@@ -9,6 +9,7 @@ package pl.kindergate.domain.model.task
  */
 enum class CognitiveSkill {
     SIMPLE_ARITHMETIC,
+    LETTER_RECOGNITION,
     // MULTI_STEP_ARITHMETIC,
     // READING_COMPREHENSION,
     // LOGICAL_REASONING,

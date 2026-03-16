@@ -20,7 +20,9 @@ import javax.inject.Singleton
  *   Level 2 – operands 1–19, sums ≤ 20  (grade 2)
  *   Level 3 – operands 10–71, sums ≤ 100 (grade 3)
  *
- * Stable task IDs (e.g. "add_l1_0") allow [getTaskById] to work reliably.
+ * Also contains 26 letter-tracing tasks (A–Z) at level 1.
+ *
+ * Stable task IDs (e.g. "add_l1_0", "letter_A") allow [getTaskById] to work reliably.
  *
  * Migration path to Room:
  *   1. Create a TaskEntity and TaskDao in data/local/db/
@@ -85,6 +87,11 @@ class InMemoryTaskRepository @Inject constructor() : TaskRepository {
             l3.forEachIndexed { i, (a, b) ->
                 add(addition(id = "add_l3_$i", a = a, b = b, level = 3))
             }
+
+            // ── Letter tracing: uppercase A–Z at level 1 ──────────────────────
+            ('A'..'Z').forEach { letter ->
+                add(letterTracing(letter = letter))
+            }
         }
 
         private fun addition(id: String, a: Int, b: Int, level: Int): Task = Task(
@@ -104,6 +111,22 @@ class InMemoryTaskRepository @Inject constructor() : TaskRepository {
             metadata = TaskMetadata(
                 gradeLevel = level,
                 tags = listOf("dodawanie", "arytmetyka"),
+            ),
+        )
+
+        private fun letterTracing(letter: Char): Task = Task(
+            id = "letter_$letter",
+            source = TaskSource.APP_LIBRARY,
+            subject = TaskSubject.MATH,
+            cognitiveSkill = CognitiveSkill.LETTER_RECOGNITION,
+            difficultyMode = DifficultyMode.MANUAL,
+            difficultyLevel = 1,
+            taskType = TaskType.LETTER_TRACING,
+            timeLimitSeconds = null,
+            content = TaskContent.LetterTracingContent(letter = letter),
+            metadata = TaskMetadata(
+                gradeLevel = 1,
+                tags = listOf("literki", "pisanie", "alfabet"),
             ),
         )
     }

@@ -59,6 +59,11 @@ fun TaskScreen(
                 onAnswerChange = onAnswerChange,
                 onSubmit = onSubmit,
             )
+            TaskType.LETTER_TRACING -> LetterTracingTask(
+                content = state.task.content as TaskContent.LetterTracingContent,
+                onAnswerChange = onAnswerChange,
+                onSubmit = onSubmit,
+            )
         }
     }
 }

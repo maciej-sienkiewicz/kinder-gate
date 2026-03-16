@@ -5,6 +5,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
+import pl.kindergate.data.engine.LetterTracingEvaluator
 import pl.kindergate.data.engine.SimpleAdditionEvaluator
 import pl.kindergate.data.engine.SimpleTaskEngine
 import pl.kindergate.data.repository.InMemoryTaskRepository
@@ -46,4 +47,8 @@ abstract class TaskModule {
     @Binds
     @IntoSet
     abstract fun bindSimpleAdditionEvaluator(impl: SimpleAdditionEvaluator): TaskEvaluator
+
+    @Binds
+    @IntoSet
+    abstract fun bindLetterTracingEvaluator(impl: LetterTracingEvaluator): TaskEvaluator
 }

@@ -21,4 +21,13 @@ sealed class TaskContent {
         val operandB: Int,
         val correctAnswer: Int,
     ) : TaskContent()
+
+    /**
+     * Finger-tracing task: child traces a letter shown as a dashed template.
+     * Used by [TaskType.LETTER_TRACING].
+     * Evaluated by checking that drawing coverage ≥ 90 %.
+     */
+    data class LetterTracingContent(
+        val letter: Char,
+    ) : TaskContent()
 }
