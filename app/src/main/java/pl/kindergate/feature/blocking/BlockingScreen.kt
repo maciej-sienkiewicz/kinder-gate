@@ -16,15 +16,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,40 +42,59 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.kindergate.R
+import pl.kindergate.feature.tasks.TaskScreen
+import pl.kindergate.feature.tasks.TaskUiState
 import pl.kindergate.ui.theme.BlockingAccent
 import pl.kindergate.ui.theme.BlockingBackground
 import pl.kindergate.ui.theme.BlockingSubtext
 import pl.kindergate.ui.theme.BlockingText
 
 /**
- * The PAUSE screen shown to the child.
+ * Fullscreen PAUSE screen shown to the child.
  *
- * Design decisions:
- * - Deep navy background (#0D1B2A) – clearly different from any typical app UI,
- *   hard to confuse with something the child expects
- * - Warm amber accent (#F4A261) – eye-catching without being alarming/red
- * - Large, bold "PAUZA" text – immediately legible even to younger children
- * - Minimal animation – pulsing pause icon to draw attention, not distract
- * - Single clear CTA: "OK, rozumiem" – no ambiguity, no other options
- * - No "close" or "X" button – cannot be dismissed accidentally
+ * ## Task integration
+ * Instead of a plain "OK, rozumiem" button the screen now hosts a short educational
+ * task provided by [BlockingViewModel]. The child must answer correctly to dismiss
+ * the screen. On a correct answer [BlockingEvent.TaskSolvedCorrectly] is emitted and
+ * [onAcknowledge] is called – exactly the same path as before.
  *
- * Accessibility:
- * - All text has contentDescription for screen readers
- * - Button has sufficient touch target (56dp height)
- * - Color contrast meets WCAG AA requirements
+ * ## Failure safety
+ * If the task engine throws ([TaskUiState.Error]) we fall back to the original plain
+ * button so the child is never permanently stuck on the blocking screen.
+ *
+ * ## No changes to MonitorService / SessionTimer
+ * The task widget lives entirely in [BlockingViewModel] + [TaskScreen].
+ * [onAcknowledge] still calls [BlockingActivity.onChildAcknowledged] which sends
+ * ACTION_BLOCK_ACKNOWLEDGED to MonitorService – the monitoring layer is untouched.
  */
 @Composable
-fun BlockingScreen(onAcknowledge: () -> Unit) {
+fun BlockingScreen(
+    onAcknowledge: () -> Unit,
+    viewModel: BlockingViewModel = hiltViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // One-shot event: correct answer → unblock
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is BlockingEvent.TaskSolvedCorrectly -> onAcknowledge()
+            }
+        }
+    }
+
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val scale by infiniteTransition.animateFloat(
         initialValue = 0.92f,
         targetValue = 1.08f,
         animationSpec = infiniteRepeatable(
             animation = tween(1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "iconScale"
+        label = "iconScale",
     )
 
     Box(
@@ -79,35 +102,36 @@ fun BlockingScreen(onAcknowledge: () -> Unit) {
             .fillMaxSize()
             .background(BlockingBackground)
             .semantics { contentDescription = "Ekran pauzy KinderGate" },
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 32.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 32.dp, vertical = 24.dp),
         ) {
-            // Animated pause icon
+            // ── Animated pause icon ───────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .size(96.dp)
                     .scale(scale)
                     .clip(CircleShape)
                     .background(BlockingAccent.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Default.Pause,
                     contentDescription = null,
                     tint = BlockingAccent,
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier.size(56.dp),
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Main heading
+            // ── Heading ───────────────────────────────────────────────────────
             Text(
                 text = stringResource(R.string.blocking_pause),
                 color = BlockingText,
@@ -115,50 +139,74 @@ fun BlockingScreen(onAcknowledge: () -> Unit) {
                 fontWeight = FontWeight.ExtraBold,
                 textAlign = TextAlign.Center,
                 letterSpacing = 4.sp,
-                modifier = Modifier.semantics {
-                    contentDescription = "Pauza"
-                }
+                modifier = Modifier.semantics { contentDescription = "Pauza" },
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Subtext
             Text(
                 text = stringResource(R.string.blocking_message),
                 color = BlockingSubtext,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "Masz chwilę, żeby odpocząć od ekranu.",
+                text = stringResource(R.string.task_solve_to_unlock),
                 color = BlockingSubtext.copy(alpha = 0.7f),
                 fontSize = 14.sp,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-            // Acknowledgment button
-            Button(
-                onClick = onAcknowledge,
-                modifier = Modifier
-                    .fillMaxWidth(0.75f)
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BlockingAccent,
-                    contentColor = Color(0xFF1A1A1A)
-                )
-            ) {
-                Text(
-                    text = stringResource(R.string.blocking_ok),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            // ── Task widget ───────────────────────────────────────────────────
+            when (val state = uiState) {
+                is TaskUiState.Loading -> {
+                    CircularProgressIndicator(
+                        color = BlockingAccent,
+                        modifier = Modifier.size(48.dp),
+                    )
+                }
+
+                is TaskUiState.ShowingTask -> {
+                    TaskScreen(
+                        state = state,
+                        onAnswerChange = viewModel::updateAnswer,
+                        onSubmit = viewModel::submitAnswer,
+                    )
+                }
+
+                is TaskUiState.Error -> {
+                    // Fallback: plain acknowledgement button so the child isn't stuck
+                    Text(
+                        text = stringResource(R.string.task_error_load),
+                        color = BlockingSubtext.copy(alpha = 0.6f),
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = onAcknowledge,
+                        modifier = Modifier
+                            .fillMaxWidth(0.75f)
+                            .height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BlockingAccent,
+                            contentColor = Color(0xFF1A1A1A),
+                        ),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.blocking_ok),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
             }
         }
     }

@@ -556,16 +556,39 @@ kinder-gate/
         │       │   │   ├── InstalledApp.kt
         │       │   │   ├── MonitoredApp.kt
         │       │   │   ├── PermissionStatus.kt
-        │       │   │   └── TamperEvent.kt         ← includes MonitorState
+        │       │   │   ├── TamperEvent.kt         ← includes MonitorState
+        │       │   │   └── task/                  ← Task Engine subdomain models
+        │       │   │       ├── ChildProgress.kt
+        │       │   │       ├── CognitiveSkill.kt
+        │       │   │       ├── DifficultyMode.kt
+        │       │   │       ├── EvaluationResult.kt
+        │       │   │       ├── Task.kt
+        │       │   │       ├── TaskContent.kt     ← sealed class (SimpleAdditionContent…)
+        │       │   │       ├── TaskContext.kt
+        │       │   │       ├── TaskMetadata.kt
+        │       │   │       ├── TaskSet.kt
+        │       │   │       ├── TaskSource.kt
+        │       │   │       ├── TaskSubject.kt
+        │       │   │       └── TaskType.kt
+        │       │   ├── engine/                    ← Task Engine interfaces
+        │       │   │   ├── TaskEngine.kt
+        │       │   │   └── TaskEvaluator.kt
         │       │   ├── repository/
         │       │   │   ├── ConfigRepository.kt
         │       │   │   ├── MonitoredAppsRepository.kt
-        │       │   │   └── SessionRepository.kt
+        │       │   │   ├── SessionRepository.kt
+        │       │   │   └── TaskRepository.kt      ← new
         │       │   └── usecase/
+        │       │       ├── GetChildProgressUseCase.kt  ← new
         │       │       ├── GetInstalledAppsUseCase.kt
-        │       │       └── ManageMonitoredAppsUseCase.kt
+        │       │       ├── GetNextTaskUseCase.kt       ← new
+        │       │       ├── ManageMonitoredAppsUseCase.kt
+        │       │       └── SubmitTaskAnswerUseCase.kt  ← new
         │       │
         │       ├── data/
+        │       │   ├── engine/                    ← Task Engine implementations
+        │       │   │   ├── SimpleAdditionEvaluator.kt
+        │       │   │   └── SimpleTaskEngine.kt
         │       │   ├── local/
         │       │   │   ├── db/
         │       │   │   │   ├── AppDatabase.kt
@@ -581,6 +604,7 @@ kinder-gate/
         │       │   │       └── SecurePreferencesManager.kt
         │       │   └── repository/
         │       │       ├── ConfigRepositoryImpl.kt
+        │       │       ├── InMemoryTaskRepository.kt  ← new (MVP: static catalog)
         │       │       ├── MonitoredAppsRepositoryImpl.kt
         │       │       └── SessionRepositoryImpl.kt
         │       │
@@ -607,20 +631,29 @@ kinder-gate/
         │       │   │   ├── AppPickerScreen.kt
         │       │   │   └── AppPickerViewModel.kt
         │       │   ├── blocking/
-        │       │   │   ├── BlockingActivity.kt
-        │       │   │   └── BlockingScreen.kt
+        │       │   │   ├── BlockingActivity.kt     ← unchanged
+        │       │   │   ├── BlockingScreen.kt       ← extended with TaskScreen widget
+        │       │   │   ├── BlockingEvent.kt        ← one-shot events (sealed class)
+        │       │   │   └── BlockingViewModel.kt    ← new; drives task engine
         │       │   ├── dashboard/
         │       │   │   ├── DashboardScreen.kt
         │       │   │   └── DashboardViewModel.kt
-        │       │   └── onboarding/
-        │       │       ├── OnboardingScreen.kt
-        │       │       └── OnboardingViewModel.kt
+        │       │   ├── onboarding/
+        │       │   │   ├── OnboardingScreen.kt
+        │       │   │   └── OnboardingViewModel.kt
+        │       │   └── tasks/                     ← reusable task UI components
+        │       │       ├── TaskScreen.kt           ← dispatches to per-type composables
+        │       │       └── TaskUiState.kt          ← sealed UI state
         │       │
         │       └── di/
         │           ├── DatabaseModule.kt
-        │           └── RepositoryModule.kt
+        │           ├── RepositoryModule.kt
+        │           └── TaskModule.kt              ← new; binds Task Engine + evaluator set
         │
         ├── test/java/pl/kindergate/
+        │   ├── task/
+        │   │   ├── SimpleAdditionEvaluatorTest.kt ← new
+        │   │   └── SimpleTaskEngineTest.kt        ← new
         │   ├── SessionTimerTest.kt
         │   ├── ConfigRepositoryTest.kt
         │   └── MonitoredAppsRepositoryTest.kt
@@ -772,10 +805,10 @@ kinder-gate/
 
 ### Priorytety v1 (kolejność)
 
-1. **Warstwa edukacyjna (quizy)**
-   - Po każdych 60s: zamiast samego OK → pytanie edukacyjne
-   - Reward engine: dziecko "zarabia" dodatkowy czas za poprawne odpowiedzi
-   - Placeholder architektoniczny jest gotowy (`BlockingScreen` → `BlockingContent`)
+1. **Warstwa edukacyjna (quizy)** ✅ MVP gotowe
+   - Po każdych 60s: zamiast samego OK → zadanie dodawania (zaimplementowane, patrz sekcja 16)
+   - Reward engine: dziecko "zarabia" dodatkowy czas za poprawne odpowiedzi (v1)
+   - Architektura rozszerzalna: nowe typy zadań bez modyfikacji istniejącego kodu
 
 2. **Panel rodzica w czasie rzeczywistym**
    - Websocket lub Firebase FCM do notyfikacji na telefon rodzica
@@ -830,3 +863,186 @@ kinder-gate/
 3. **Multi-account i Android Enterprise** – Czy i jak obsługiwać managed profiles, work profiles, secondary accounts.
 4. **Backend i sync architektura** – Kiedy dodać backend, jaki stack, jak robić real-time notifications do rodzica, privacy-first approach.
 5. **Monetyzacja i freemium model** – Gdzie ciąć funkcje, jak implementować paywall bez naruszania UX, compliance z Google Play billing.
+
+---
+
+## 16. Task Engine – warstwa zadań edukacyjnych
+
+> Wersja: 0.1.0-mvp · Dodana: 2026-03
+
+### Cel
+
+Zamiast ekranu PAUZA z samym przyciskiem „OK, rozumiem" dziecko dostaje krótkie zadanie edukacyjne (MVP: dodawanie w pamięci). Poprawna odpowiedź odblokowuje ekran. Cała logika zadań jest izolowana od warstwy monitoringu – `MonitorService`, `SessionTimer` i `TamperDetector` pozostają niezmienione.
+
+---
+
+### Architektura poddomeny
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    FEATURE / BLOCKING                         │
+│  BlockingActivity (unchanged)                                 │
+│    └─ BlockingScreen ──→ BlockingViewModel                    │
+│                               ├─ GetNextTaskUseCase           │
+│                               └─ SubmitTaskAnswerUseCase      │
+└──────────────────────────────────┬───────────────────────────┘
+                                   │ domain contracts only
+┌──────────────────────────────────▼───────────────────────────┐
+│                    DOMAIN / ENGINE                            │
+│  TaskEngine (interface)   TaskEvaluator (interface)           │
+│  TaskRepository (interface)                                   │
+│  Use cases: GetNextTask / SubmitAnswer / GetChildProgress      │
+│  Models: Task, TaskContent, EvaluationResult, ChildProgress… │
+└──────────────────────────────────┬───────────────────────────┘
+                                   │ Hilt @Binds
+┌──────────────────────────────────▼───────────────────────────┐
+│                    DATA / ENGINE                              │
+│  SimpleTaskEngine       – adaptive difficulty, in-memory log  │
+│  SimpleAdditionEvaluator – stateless; handles SIMPLE_ADDITION │
+│  InMemoryTaskRepository  – 45 curated tasks, levels 1–3       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Modele domenowe (domain/model/task/)
+
+| Klasa | Rola |
+|-------|------|
+| `Task` | Główny model zadania; nie ma adnotacji Room |
+| `TaskContent` | Sealed class – polimorficzny payload pytania (MVP: `SimpleAdditionContent`) |
+| `TaskSource` | Enum – skąd pochodzi zadanie (MVP: `APP_LIBRARY`) |
+| `TaskSubject` | Enum – przedmiot (MVP: `MATH`) |
+| `CognitiveSkill` | Enum – umiejętność (MVP: `SIMPLE_ARITHMETIC`) |
+| `DifficultyMode` | Enum – jak ustalany jest poziom (MVP: `MANUAL`) |
+| `TaskType` | Enum – format zadania / który evaluator obsługuje (MVP: `SIMPLE_ADDITION`) |
+| `TaskMetadata` | Opcjonalne metadane (gradeLevel, tags) – nie wpływają na logikę |
+| `TaskContext` | Hint przekazywany do silnika (MVP: `preferredDifficultyLevel`) |
+| `TaskSet` | Nazwana kolekcja zadań z zakresu trudności |
+| `EvaluationResult` | Wynik ewaluacji jednej odpowiedzi |
+| `ChildProgress` | Zagregowany postęp dziecka |
+
+---
+
+### Interfejsy domenowe
+
+#### TaskRepository
+```kotlin
+interface TaskRepository {
+    suspend fun getTaskById(id: String): Task?
+    suspend fun getTasksForSet(taskSetId: String): List<Task>
+    suspend fun getRandomTask(subject: TaskSubject, difficultyLevel: Int): Task?
+}
+```
+
+#### TaskEngine
+```kotlin
+interface TaskEngine {
+    suspend fun getNextTask(childId: String, context: TaskContext? = null): Task
+    suspend fun submitAnswer(childId: String, taskId: String, answer: String): EvaluationResult
+    suspend fun getChildProgress(childId: String): ChildProgress
+}
+```
+
+#### TaskEvaluator
+```kotlin
+interface TaskEvaluator {
+    fun canEvaluate(task: Task): Boolean
+    fun evaluate(task: Task, answer: String): EvaluationResult
+}
+```
+
+---
+
+### Implementacje MVP
+
+#### InMemoryTaskRepository
+- 45 pre-seeded zadań (15 × 3 poziomy)
+- Poziom 1: sumy ≤ 10 | Poziom 2: sumy ≤ 20 | Poziom 3: sumy ≤ 100
+- Stabilne ID (`add_l1_0`…`add_l3_14`) → `getTaskById` działa niezawodnie
+- Migracja do Room: zaimplementuj `RoomTaskRepository : TaskRepository`, zmień binding w `TaskModule`
+
+#### SimpleAdditionEvaluator
+- Bezstanowy, thread-safe
+- Poprawność: `answer.trim().toIntOrNull() == correctAnswer`
+- Feedback po polsku, niekarający
+
+#### SimpleTaskEngine (adaptacyjna trudność)
+```
+getNextTask(childId, context):
+  1. Pobierz aktywny poziom (lub z context.preferredDifficultyLevel, lub MIN=1)
+  2. Sprawdź ostatnich WINDOW_SIZE=5 odpowiedzi:
+     - wszystkie poprawne → poziom +1 (max 3)
+     - > FAILURE_THRESHOLD=2 błędów → poziom -1 (min 1)
+     - else → bez zmian
+  3. Zwróć losowe zadanie z repozytorium dla subject=MATH + wybrany poziom
+
+submitAnswer(childId, taskId, answer):
+  1. Pobierz zadanie z repozytorium
+  2. Znajdź pasujący evaluator (Set<TaskEvaluator> via Hilt multibinding)
+  3. Evaluuj, zapisz do historii in-memory
+  4. Przekalkuluj poziom
+  5. Zwróć EvaluationResult
+```
+
+Historia przechowywana in-memory (`ConcurrentHashMap`) – reset po process death. W v1: persystuj do Room.
+
+---
+
+### DI – TaskModule
+
+```kotlin
+@Module @InstallIn(SingletonComponent::class)
+abstract class TaskModule {
+    @Binds @Singleton abstract fun bindTaskRepository(impl: InMemoryTaskRepository): TaskRepository
+    @Binds @Singleton abstract fun bindTaskEngine(impl: SimpleTaskEngine): TaskEngine
+    @Binds @IntoSet    abstract fun bindSimpleAdditionEvaluator(impl: SimpleAdditionEvaluator): TaskEvaluator
+}
+```
+
+Dodanie nowego typu zadania = nowy `@Binds @IntoSet` wpis. Żadne istniejące klasy nie wymagają zmiany.
+
+---
+
+### Integracja z BlockingActivity
+
+```
+BlockingActivity (unchanged)
+  └─ setContent { BlockingScreen(onAcknowledge = ::onChildAcknowledged) }
+       └─ hiltViewModel<BlockingViewModel>()
+            ├─ uiState: StateFlow<TaskUiState>
+            │    ├─ Loading   → CircularProgressIndicator
+            │    ├─ ShowingTask → TaskScreen (feature/tasks)
+            │    └─ Error     → fallback OK button (dziecko nie utknęło)
+            └─ events: SharedFlow<BlockingEvent>
+                 └─ TaskSolvedCorrectly → onAcknowledge() → MonitorService.ACTION_BLOCK_ACKNOWLEDGED
+```
+
+`BlockingActivity.onChildAcknowledged()` i `MonitorService` są bez zmian.
+
+---
+
+### ADR-006: TaskEvaluator jako Set via Hilt multibinding
+
+**Problem**: jak dodawać nowe typy zadań bez modyfikacji `SimpleTaskEngine`?
+
+**Decyzja**: Każdy `TaskEvaluator` jest wstrzykiwany jako element `Set<TaskEvaluator>` przez Hilt `@IntoSet`. Silnik iteruje zbiór i wywołuje `canEvaluate()` żeby wybrać właściwy.
+
+**Konsekwencje**:
+- Dodanie nowego zadania = nowa klasa + jeden wpis w `TaskModule` — open/closed principle
+- Minimalny narzut: zbiór jest mały (kilka–kilkanaście evaluatorów)
+- Alternatywa odrzucona: mapa `TaskType → TaskEvaluator` w Module – silnie sprzężona z enum, trudna do testowania
+
+---
+
+### Plan rozbudowy (v1 → v2)
+
+| Faza | Co dodać | Gdzie |
+|------|----------|-------|
+| v1 | Persystencja historii w Room | Nowe `TaskHistoryEntity` + `RoomTaskEngine` |
+| v1 | Odejmowanie, mnożenie | Nowe `TaskType`, `TaskContent` subtype, nowy `TaskEvaluator` |
+| v1 | Reward: +30s za poprawną odpowiedź | `BlockingViewModel` + `SessionTimer.addBonus(ms)` |
+| v2 | AI-generowane zadania | `AiTaskRepository : TaskRepository` |
+| v2 | Wieloprzedmiotowe zadania | `TaskSubject.READING` itd. + odpowiednie evaluatory |
+| v2 | Wybór poziomu przez rodzica | `TaskContext.preferredDifficultyLevel` z Dashboard |
+| v3 | Spaced repetition | Wymień `SimpleTaskEngine` na `SpacedRepetitionTaskEngine` |

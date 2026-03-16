@@ -75,6 +75,13 @@
     <string name="notification_tamper_title">Uwaga: zmiana uprawnień</string>
     <string name="notification_tamper_text">Ktoś wyłączył uprawnienia KinderGate. Sprawdź ustawienia.</string>
 
+    <!-- Task engine -->
+    <string name="task_solve_to_unlock">Rozwiąż zadanie, żeby odblokować ekran.</string>
+    <string name="task_submit">Sprawdź</string>
+    <string name="task_loading">Ładowanie zadania…</string>
+    <string name="task_error_load">Nie można załadować zadania.</string>
+    <string name="task_correct_unlocking">Brawo! Odblokowuję…</string>
+
     <!-- Common -->
     <string name="continue_button">Dalej</string>
     <string name="back_button">Wstecz</string>
