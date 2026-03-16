@@ -8,14 +8,14 @@
 
 ### Najważniejsza decyzja architektoniczna
 
-KinderGate MVP działa jako **Foreground Service + UsageStatsManager polling (1s)** z blokowaniem przez **pełnoekranową Activity**. To nie jest rozwiązanie oparte na AccessibilityService jako metodzie głównej – to jest celowa decyzja redukująca ryzyko odrzucenia przez Google Play.
+KinderGate MVP działa jako **Foreground Service** z hybrydowym wykrywaniem foreground app (**AccessibilityService jako główna metoda + UsageStatsManager jako fallback**) i blokowaniem przez **pełnoekranową Activity**. AccessibilityService daje natychmiastową detekcję; UsageStats (polling 1s) zapewnia fallback na urządzeniach, gdzie Accessibility jest niedostępna lub wyłączona.
 
 ### Trzy fundamentalne kompromisy MVP
 
 | Kompromis | Decyzja | Dlaczego |
 |-----------|---------|----------|
 | Overlay vs BlockingActivity | BlockingActivity | Nie wymaga SYSTEM_ALERT_WINDOW jako głównego mechanizmu; mniej ryzykowne w Play Store |
-| AccessibilityService primary vs secondary | Secondary (fallback) | Primary = ryzyko odrzucenia przez Play; UsageStats to oficjalna droga |
+| AccessibilityService primary vs secondary | **Primary** (z fallbackiem UsageStats) | Daje natychmiastową reakcję bez opóźnienia 1s; UsageStats jako backup gdy Accessibility niedostępna |
 | Device Admin vs without | Without (opt-in warning) | Device Admin to enterprise API; Play Store nie lubi go w consumer apps |
 
 ### Co to MVP potrafi
@@ -96,10 +96,11 @@ Co robimy zamiast tego:
 │   DATA LAYER    │  │           SERVICE LAYER                  │
 │  Room Database  │  │  MonitorService (ForegroundService)       │
 │  EncryptedPrefs │  │    ├─ AppUsageDetector                   │
-│  RepoImpls      │  │    │    ├─ UsageStatsManager (primary)   │
-└─────────────────┘  │    │    └─ AccessibilityService (fallback)│
-                     │    ├─ SessionTimer (elapsedRealtime)      │
-                     │    └─ TamperDetector                      │
+│  RepoImpls      │  │    │    ├─ AccessibilityService (priority 1)│
+└─────────────────┘  │    │    ├─ UsageEvents/10s (priority 2)    │
+                     │    │    └─ UsageStats aggregated (priority 3)│
+                     │    ├─ SessionTimer (elapsedRealtime)         │
+                     │    └─ TamperDetector (health check co 30s)   │
                      │                                           │
                      │  BlockingActivity (separate task)         │
                      └─────────────────────────────────────────┘
@@ -112,12 +113,20 @@ Co robimy zamiast tego:
 ### Przepływ danych: wykrycie blokady
 
 ```
-MonitorService.tick() [every 1s]
+KinderGateAccessibilityService.onAccessibilityEvent()
+  │  [TYPE_WINDOW_STATE_CHANGED – natychmiast]
+  ├─ lastForegroundPackage.set(pkg)         ← AtomicReference odczytany przez AppUsageDetector
+  └─ packageEvents.tryEmit(pkg)             ← SharedFlow; MonitorService.observePackageEvents()
+       └─ MonitorService.tick(isEventTriggered=true)  ← natychmiastowy tick bez czekania na polling
+
+MonitorService.tick() [polling co 1s + event-triggered]
   │
-  ├─ AppUsageDetector.getForegroundPackage()
-  │    ├─ UsageStatsManager.queryEvents(now-2s, now)
+  ├─ AppUsageDetector.getForegroundPackage()   [hybrydowe, 3-poziomowe]
+  │    ├─ [priority 1] KinderGateAccessibilityService.lastForegroundPackage.get()
+  │    ├─ [priority 2] UsageStatsManager.queryEvents(now-10s, now)
   │    │    → ACTIVITY_RESUMED events → most recent package
-  │    └─ [fallback] KinderGateAccessibilityService.lastForegroundPackage
+  │    └─ [priority 3] UsageStatsManager.queryUsageStats(INTERVAL_DAILY, now-1h, now)
+  │         → maxByOrNull { lastTimeUsed }
   │
   ├─ package in monitoredPackages?
   │    NO → SessionTimer.onNonMonitoredForeground() → timer pauses/resets
@@ -147,16 +156,21 @@ MonitorService.tick() [every 1s]
 
 ### MonitorService
 - `Service` subclass, `foregroundServiceType="specialUse"`
-- Trzyma `PARTIAL_WAKE_LOCK` aby CPU nie zasypiał
+- Trzyma `PARTIAL_WAKE_LOCK` (timeout 1h) aby CPU nie zasypiał
 - `START_STICKY` – Android restartuje service po kill
-- Uruchamia coroutine loop co 1s
-- Drugi loop co 30s sprawdza uprawnienia (tamper detection)
+- **Dwa źródła ticków:**
+  1. Coroutine polling loop co 1s (`monitorJob`)
+  2. Event-driven tick z `KinderGateAccessibilityService.packageEvents` SharedFlow (`eventJob`) – reaguje natychmiastowo na zmianę okna
+- Drugi loop co 30s sprawdza uprawnienia (tamper detection, `healthCheckJob`)
+- `observeMonitoredApps()` – reaktywnie aktualizuje listę `excludedPackages` z Room DB
 
 ### AccessibilityService
-- Minimalna konfiguracja: tylko `TYPE_WINDOW_STATE_CHANGED`
-- `canRetrieveWindowContent = false`
-- Utrzymuje `AtomicReference<String?>` z ostatnim foreground package
-- Czytane przez `AppUsageDetector` jako fallback
+- Minimalna konfiguracja: tylko `TYPE_WINDOW_STATE_CHANGED`, `notificationTimeout=100ms`
+- `canRetrieveWindowContent = false` – nie czytamy treści aplikacji
+- Utrzymuje `AtomicReference<String?>` z ostatnim foreground package (`lastForegroundPackage`)
+- Emituje `packageEvents: MutableSharedFlow<String>` – natychmiastowy trigger dla `MonitorService`
+- **Główna metoda detekcji (priority 1)** w `AppUsageDetector`; UsageStats jako backup gdy Accessibility jest wyłączona
+- `isServiceConnected: Boolean` – dostępny stan połączenia dla diagnostyki
 
 ### BlockingActivity
 - `android:taskAffinity="pl.kindergate.blocking"` – oddzielny task
@@ -167,9 +181,10 @@ MonitorService.tick() [every 1s]
 - `setShowWhenLocked(true)` API 27+
 
 ### BootReceiver
-- Nasłuchuje `BOOT_COMPLETED` + vendor-specific equivalents
-- Sprawdza `SecurePrefs.isOnboardingComplete()` przed startem
-- Wykrywa potencjalny force stop heurystyką (krótki ostatni uptime)
+- Nasłuchuje `BOOT_COMPLETED` + vendor-specific equivalents (QUICKBOOT_POWERON dla HTC, MIUI Resume)
+- Sprawdza `SecurePrefs.isOnboardingComplete()` i `isMonitoringEnabled()` przed startem
+- Heurystyka force stop: jeśli `lastKnownServiceUptimeMs != 0` (poprzedni run odnotowany), loguje `TamperType.BOOT_AFTER_SHORT_UPTIME` z zarejestrowanym uptime; informacja dla rodzica w DashboardScreen
+- Uruchamia `MonitorService` przez `startForegroundService()` (API 26+)
 
 ### Room Database
 - `MonitoredApp`, `BlockSession`, `TamperEvent` entities
@@ -189,8 +204,8 @@ MonitorService.tick() [every 1s]
 |-------------|--------|----------|---------|------------------------|
 | **Restart telefonu** | Wysoki | BootReceiver | Automatyczny restart usługi | Safe mode wyłącza receiver |
 | **Force stop** | Wysoki | Brak real-time; heurystyka przy restarcie | TamperEvent + powiadomienie rodzica | Usługa zatrzymana do restartu |
-| **Wyłączenie accessibility** | Średni | Health check co 30s | TamperEvent; UsageStats jako primary | Fallback UsageStats nadal działa |
-| **Revoke usage stats** | Krytyczny | Health check co 30s | Alert dla rodzica; monitoring niemożliwy | Brak detekcji bez tego uprawnienia |
+| **Wyłączenie accessibility** | Średni | Health check co 30s | TamperEvent; UsageStats polling jako fallback nadal działa | Degradacja z event-driven do 1s polling |
+| **Revoke usage stats** | Wysoki | Health check co 30s | Alert dla rodzica; Accessibility nadal działa jako primary | Utrata fallbacku; monitoring działa jeśli Accessibility włączona |
 | **Revoke overlay** | Niski | Health check | TamperEvent | BlockingActivity nadal działa bez overlay |
 | **Battery optimization włączona** | Średni | PowerManager.isIgnoring... | TamperEvent; UI alert | OEM może ograniczyć service |
 | **Zmiana czasu systemowego** | Niski | N/A (timer immunny) | Brak potrzeby | Elapsedreality nie zmienia się |
@@ -477,8 +492,10 @@ Przy starcie `BootReceiver`:
 | SessionTimer state machine | `SessionTimerTest.kt` | IDLE→RUNNING→BLOCKING transitions |
 | Timer immune to clock change | `SessionTimerTest.kt` | `elapsedRealtime` mock |
 | App switch resets timer | `SessionTimerTest.kt` | `onNonMonitoredForeground()` |
-| PIN verify | `PinSecurityTest.kt` | Correct/incorrect/unconfigured PIN |
+| ConfigRepository (PIN, interval) | `ConfigRepositoryTest.kt` | PIN hash verify, block interval, monitoring flag |
 | MonitoredApps CRUD | `MonitoredAppsRepositoryTest.kt` | Add/remove/toggle |
+| SimpleAdditionEvaluator | `task/SimpleAdditionEvaluatorTest.kt` | Correct/incorrect/trim/case answers |
+| SimpleTaskEngine adaptive difficulty | `task/SimpleTaskEngineTest.kt` | Level up/down after window; getChildProgress |
 
 ### Integration tests (Device/Emulator)
 
@@ -633,8 +650,7 @@ kinder-gate/
         │       │   ├── blocking/
         │       │   │   ├── BlockingActivity.kt     ← unchanged
         │       │   │   ├── BlockingScreen.kt       ← extended with TaskScreen widget
-        │       │   │   ├── BlockingEvent.kt        ← one-shot events (sealed class)
-        │       │   │   └── BlockingViewModel.kt    ← new; drives task engine
+        │       │   │   └── BlockingViewModel.kt    ← drives task engine; zawiera sealed class BlockingEvent
         │       │   ├── dashboard/
         │       │   │   ├── DashboardScreen.kt
         │       │   │   └── DashboardViewModel.kt
@@ -667,25 +683,28 @@ kinder-gate/
 
 ## 13. Lista decyzji architektonicznych (ADR)
 
-### ADR-001: UsageStatsManager jako primary detection
+### ADR-001: Hybrydowa detekcja foreground app (Accessibility primary + UsageStats fallback)
 
-**Decyzja:** Używamy `UsageStatsManager.queryEvents()` jako głównej metody detekcji foreground app.
+**Decyzja:** `AppUsageDetector` używa trzystopniowego priorytetu:
+1. `KinderGateAccessibilityService.lastForegroundPackage` – natychmiastowy, zero-latency
+2. `UsageStatsManager.queryEvents(now-10s, now)` – polling, ~1s opóźnienie
+3. `UsageStatsManager.queryUsageStats(INTERVAL_DAILY)` – agregowane, ostateczny fallback
 
 **Alternatywy:**
-- AccessibilityService as primary
+- UsageStats as primary (poprzednie założenie architektoniczne)
 - `ActivityManager.getRunningTasks()` (deprecated API 21, unreliable)
 - `ActivityManager.getRunningAppProcesses()` (nie daje foreground info)
 
 **Uzasadnienie:**
-- `UsageStatsManager` to oficjalne Google API do tego celu
-- Niższe ryzyko odrzucenia przez Play Store (vs. AccessibilityService primary)
-- Działa bez root
-- Dostępne od API 21 (nasz minSdk = 26)
+- AccessibilityService daje natychmiastową detekcję (event-driven, TYPE_WINDOW_STATE_CHANGED) eliminując 1s opóźnienie
+- UsageStats pozostaje jako fallback gdy Accessibility jest wyłączona – degradacja funkcjonalna zamiast awarii
+- Połączenie obu metod daje maksymalne pokrycie OEM-specific restrictions (MIUI blokuje UsageStats; niektóre ROM-y utrudniają Accessibility)
+- MonitorService dodatkowo subskrybuje `packageEvents` SharedFlow z AccessibilityService dla event-driven ticków niezależnie od pollingu
 
 **Konsekwencje:**
-- Wymaga uprawnienia `PACKAGE_USAGE_STATS` (specjalne, udzielane ręcznie)
-- Na MIUI może być zablokowane przez ROM; potrzebny fallback
-- Polling co 1s = ~10ms CPU overhead per second (akceptowalne)
+- Wymaga zarówno `PACKAGE_USAGE_STATS` jak i (opcjonalnie) Accessibility Service
+- Polling co 1s = ~10ms CPU overhead per second (akceptowalne dla foreground service)
+- AccessibilityService jako primary → konieczność jasnego wyjaśnienia w Play Store description: "nie czyta treści aplikacji"
 
 ---
 
