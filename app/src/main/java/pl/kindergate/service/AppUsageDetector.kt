@@ -55,8 +55,27 @@ class AppUsageDetector @Inject constructor(
     }
 
     /**
+     * Last known foreground package from UsageStats.
+     *
+     * ACTIVITY_RESUMED fires ONCE when an app comes to foreground, not continuously.
+     * With a short query window (e.g. 2s), the event would fall out of the window
+     * after 2 ticks and getForegroundPackage() would return null forever – breaking
+     * the entire monitoring system.
+     *
+     * We cache the last detected package and clear it only when we see an explicit
+     * ACTIVITY_PAUSED for that package (meaning the user left the app).
+     */
+    @Volatile
+    private var lastKnownForegroundPackage: String? = null
+
+    /**
      * Returns the package name of the currently foreground app, or null if unknown.
      * Called every [POLL_INTERVAL_MS] from MonitorService.
+     *
+     * Detection chain:
+     * 1. UsageStats queryEvents – official API, most reliable
+     * 2. Cached last known package – survives gaps between events
+     * 3. AccessibilityService fallback – for OEMs that block UsageStats
      */
     fun getForegroundPackage(): String? {
         return getViaUsageStats() ?: getViaAccessibilityService()
@@ -69,26 +88,50 @@ class AppUsageDetector @Inject constructor(
         }
         return try {
             val now = System.currentTimeMillis()
-            // Query last 2s to ensure we capture the most recent foreground event
             val events = manager.queryEvents(now - QUERY_WINDOW_MS, now)
             val event = UsageEvents.Event()
             var lastResumedPackage: String? = null
             var lastResumedTime = 0L
+            var lastPausedPackage: String? = null
 
             while (events.hasNextEvent()) {
                 events.getNextEvent(event)
-                if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED &&
-                    event.timeStamp > lastResumedTime) {
-                    lastResumedTime = event.timeStamp
-                    lastResumedPackage = event.packageName
+                when (event.eventType) {
+                    UsageEvents.Event.ACTIVITY_RESUMED -> {
+                        if (event.timeStamp > lastResumedTime) {
+                            lastResumedTime = event.timeStamp
+                            lastResumedPackage = event.packageName
+                        }
+                    }
+                    UsageEvents.Event.ACTIVITY_PAUSED -> {
+                        lastPausedPackage = event.packageName
+                    }
                 }
             }
 
-            // Filter out our own blocking screen to prevent self-detection loop
+            // If we found a fresh RESUMED event, update the cache
+            if (lastResumedPackage != null && lastResumedPackage != context.packageName) {
+                lastKnownForegroundPackage = lastResumedPackage
+                return lastResumedPackage
+            }
+
+            // If the cached package was PAUSED, clear the cache (user left the app)
+            if (lastPausedPackage != null && lastPausedPackage == lastKnownForegroundPackage) {
+                Log.d(TAG, "getViaUsageStats: cached package $lastPausedPackage was paused, clearing")
+                lastKnownForegroundPackage = null
+                return null
+            }
+
+            // No fresh events – return cached package (app is still in foreground)
+            val cached = lastKnownForegroundPackage
+            if (cached != null) {
+                return cached
+            }
+
+            // Filter out our own package
             if (lastResumedPackage == context.packageName) null
             else lastResumedPackage
         } catch (e: SecurityException) {
-            // Permission revoked at runtime – tamper detection handles this
             Log.e(TAG, "getViaUsageStats: SecurityException – PACKAGE_USAGE_STATS revoked?", e)
             null
         } catch (e: Exception) {
@@ -98,17 +141,22 @@ class AppUsageDetector @Inject constructor(
     }
 
     private fun getViaAccessibilityService(): String? {
-        // KinderGateAccessibilityService.lastForegroundPackage is updated
-        // from the accessibility event thread. Read is atomic for String references.
         val pkg = KinderGateAccessibilityService.lastForegroundPackage.get()
             .takeIf { it != null && it != context.packageName }
-        if (pkg != null) Log.d(TAG, "getViaAccessibilityService: $pkg")
+        if (pkg != null) Log.d(TAG, "getViaAccessibilityService: fallback detected $pkg")
         return pkg
     }
 
     companion object {
         private const val TAG = "KG_Detector"
         const val POLL_INTERVAL_MS = 1_000L
-        const val QUERY_WINDOW_MS = 2_000L
+
+        /**
+         * Query window for UsageStats events.
+         * Must be long enough to catch the last ACTIVITY_RESUMED event even if
+         * the user has been in the same app for a while. 60s matches the default
+         * block interval and ensures we always find recent events.
+         */
+        const val QUERY_WINDOW_MS = 60_000L
     }
 }

@@ -160,7 +160,8 @@ class MonitorService : Service() {
 
         val foregroundPackage = detector.getForegroundPackage()
         if (foregroundPackage == null) {
-            if (logThisTick) Log.d(TAG, "tick: foreground package = null (usage stats unavailable?)")
+            if (logThisTick) Log.d(TAG, "tick: foreground package = null " +
+                "(accessibility connected=${KinderGateAccessibilityService.isServiceConnected})")
             return
         }
 
