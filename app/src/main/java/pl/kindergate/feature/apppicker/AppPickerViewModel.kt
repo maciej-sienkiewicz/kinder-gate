@@ -40,6 +40,7 @@ class AppPickerViewModel @Inject constructor(
     private fun loadApps() {
         viewModelScope.launch {
             val apps = getInstalledAppsUseCase()
+            // In the domain model, isExcluded means it's ALREADY in the monitored list
             val selectedPackages = apps.filter { it.isExcluded }.map { it.packageName }.toSet()
             _uiState.update { it.copy(apps = apps, selectedPackages = selectedPackages, isLoading = false) }
         }
@@ -64,16 +65,19 @@ class AppPickerViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true) }
             try {
+                // Map the selected packages to MonitoredApp objects
+                val allAppsByPackage = _uiState.value.apps.associateBy { it.packageName }
+                val updatedApps = _uiState.value.selectedPackages.map { pkg ->
+                    val appInfo = allAppsByPackage[pkg]
+                    pl.kindergate.domain.model.MonitoredApp(
+                        packageName = pkg,
+                        appLabel = appInfo?.label ?: pkg
+                    )
+                }
+                
                 manageMonitoredAppsUseCase.saveSelection(
                     packageNames = _uiState.value.selectedPackages,
-                    existingApps = _uiState.value.apps
-                        .filter { it.isExcluded }
-                        .map { app ->
-                            pl.kindergate.domain.model.MonitoredApp(
-                                packageName = app.packageName,
-                                appLabel = app.label
-                            )
-                        }
+                    existingApps = updatedApps
                 )
                 onDone()
             } finally {

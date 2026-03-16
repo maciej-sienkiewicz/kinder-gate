@@ -47,7 +47,7 @@ fun AppPickerScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text("Wyklucz aplikacje (${state.selectedPackages.size})")
+                    Text("Monitoruj aplikacje (${state.selectedPackages.size})")
                 },
                 navigationIcon = {
                     IconButton(onClick = onDone) {

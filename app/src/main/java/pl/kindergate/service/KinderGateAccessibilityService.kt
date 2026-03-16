@@ -3,34 +3,11 @@ package pl.kindergate.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.accessibility.AccessibilityEvent
+import kotlinx.coroutines.flow.MutableSharedFlow
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Accessibility Service – FALLBACK foreground app detector.
- *
- * PURPOSE: Provides foreground app package name on devices/ROMs where
- * UsageStatsManager is unavailable or blocked (e.g., some Xiaomi/MIUI variants,
- * certain Huawei firmware configurations).
- *
- * SCOPE: Intentionally minimal.
- * - We only listen to TYPE_WINDOW_STATE_CHANGED events.
- * - We do NOT read window content (canRetrieveWindowContent = false in config).
- * - We do NOT intercept gestures or keyboard events.
- * - We do NOT log what the child is doing – only which app is foreground.
- *
- * PLAY STORE COMPLIANCE:
- * The primary concern with AccessibilityService in Play Store review is
- * "accessibility services should only be used to assist users with disabilities."
- * For parental control apps, Google's policy makes an exception if:
- * 1. The service is used only for its stated parental control purpose
- * 2. The manifest declares a clear description
- * 3. The service does NOT collect/exfiltrate sensitive data
- * We satisfy all three conditions.
- *
- * THREAD SAFETY:
- * lastForegroundPackage uses AtomicReference for safe cross-thread reads.
- * MonitorService reads it from its coroutine; accessibility callbacks arrive
- * on the main thread.
+ * Accessibility Service – FALLBACK foreground app detector and EVENT TRIGGER.
  */
 class KinderGateAccessibilityService : AccessibilityService() {
 
@@ -48,12 +25,13 @@ class KinderGateAccessibilityService : AccessibilityService() {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
         if (pkg.isBlank()) return
+        
         lastForegroundPackage.set(pkg)
+        // Emit event to trigger immediate tick in MonitorService
+        packageEvents.tryEmit(pkg)
     }
 
-    override fun onInterrupt() {
-        // No ongoing actions to interrupt
-    }
+    override fun onInterrupt() {}
 
     override fun onDestroy() {
         super.onDestroy()
@@ -62,13 +40,16 @@ class KinderGateAccessibilityService : AccessibilityService() {
     }
 
     companion object {
-        /**
-         * Package name of the most recently seen foreground window.
-         * Written on main thread from accessibility callback.
-         * Read on MonitorService coroutine thread.
-         * AtomicReference ensures visibility without synchronization.
-         */
         val lastForegroundPackage = AtomicReference<String?>(null)
+        
+        /**
+         * Flow of package names that have just come to the foreground.
+         * Used by MonitorService to react nearly instantly to window changes.
+         */
+        val packageEvents = MutableSharedFlow<String>(
+            extraBufferCapacity = 16,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+        )
 
         @Volatile
         var isServiceConnected: Boolean = false

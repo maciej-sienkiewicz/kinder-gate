@@ -3,13 +3,12 @@ package pl.kindergate.domain.model
 import android.graphics.drawable.Drawable
 
 /**
- * Represents an app installed on the device.
- * Used in the app picker UI. Not persisted – fetched at runtime from PackageManager.
+ * UI model representing an app installed on the device.
  */
 data class InstalledApp(
     val packageName: String,
     val label: String,
     val icon: Drawable?,
     val isSystemApp: Boolean,
-    val isExcluded: Boolean = false
+    val isExcluded: Boolean
 )

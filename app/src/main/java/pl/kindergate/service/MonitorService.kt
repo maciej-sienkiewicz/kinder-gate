@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import pl.kindergate.KinderGateApplication
@@ -34,33 +35,6 @@ import javax.inject.Inject
 
 /**
  * Core monitoring service for KinderGate.
- *
- * This is a FOREGROUND SERVICE that runs continuously while the app is active.
- * It is the single source of truth for monitoring logic.
- *
- * Architecture:
- * - Started by BootReceiver after device restart
- * - Started by MainActivity when onboarding completes
- * - Runs as long as the device is on; cannot be killed by battery optimizer
- *   (if parent granted the exemption during onboarding)
- * - Uses a tight poll loop (every 1s) to detect foreground app changes
- *
- * Service lifecycle and resistance to process death:
- * - START_STICKY: Android recreates the service after it's killed
- * - The service is re-started by BootReceiver after reboot
- * - WakeLock: PARTIAL wake lock ensures the CPU stays awake during detection
- *   (screen can be off, we still monitor)
- *
- * NOTE on wake locks and battery:
- * - We hold a partial WakeLock to ensure the poll loop continues even when
- *   the screen is off. This is necessary for accurate time tracking.
- * - The parent must grant battery optimization exemption for this to be reliable.
- * - WakeLock is released when the service is destroyed.
- *
- * Thread model:
- * - All monitoring logic runs on a single coroutine (Dispatchers.Default)
- * - DB writes are dispatched to Dispatchers.IO via repository layer
- * - UI interactions (launching BlockingActivity) use Dispatchers.Main
  */
 @AndroidEntryPoint
 class MonitorService : Service() {
@@ -75,24 +49,20 @@ class MonitorService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var monitorJob: Job? = null
     private var healthCheckJob: Job? = null
+    private var eventJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
-    // Cached set of excluded (blacklisted) packages – refreshed when DB changes
     @Volatile private var excludedPackages: Set<String> = emptySet()
-
-    // Last known permission states for change detection (avoid duplicate tamper events)
     @Volatile private var lastUsageStatsGranted: Boolean = true
     @Volatile private var lastOverlayGranted: Boolean = true
     @Volatile private var lastAccessibilityEnabled: Boolean = true
-
-    // Track whether we've launched blocking to avoid duplicate launches
     @Volatile private var isBlockingActive: Boolean = false
-
-    // Tick counter for periodic logging (avoid per-second spam)
-    private var tickCount = 0L
-
-    // Pending block session ID for acknowledgment
     @Volatile private var pendingBlockSessionId: Long? = null
+    
+    // The package that was in foreground when block was triggered
+    @Volatile private var currentlyBlockedPackage: String? = null
+    
+    private var tickCount = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -101,6 +71,7 @@ class MonitorService : Service() {
         startForeground(NOTIFICATION_ID, buildForegroundNotification())
         securePrefs.setServiceStartedAtElapsed(SystemClock.elapsedRealtime())
         observeMonitoredApps()
+        observePackageEvents()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -119,20 +90,14 @@ class MonitorService : Service() {
         super.onDestroy()
         monitorJob?.cancel()
         healthCheckJob?.cancel()
+        eventJob?.cancel()
         releaseWakeLock()
         securePrefs.setLastKnownServiceUptimeMs(SystemClock.elapsedRealtime())
     }
 
-    // -------------------------------------------------------------------------
-    // Monitoring loop
-    // -------------------------------------------------------------------------
-
     private fun startMonitoring() {
-        if (monitorJob?.isActive == true) {
-            Log.d(TAG, "startMonitoring: already running, skipping")
-            return
-        }
-        Log.i(TAG, "startMonitoring: starting monitor loop")
+        if (monitorJob?.isActive == true) return
+        
         monitorJob = serviceScope.launch {
             while (isActive) {
                 tick()
@@ -147,29 +112,48 @@ class MonitorService : Service() {
         }
     }
 
-    private suspend fun tick() {
-        tickCount++
-        val logThisTick = tickCount % LOG_INTERVAL_TICKS == 0L
+    private fun observePackageEvents() {
+        eventJob = serviceScope.launch {
+            KinderGateAccessibilityService.packageEvents.collectLatest { 
+                // Immediate tick when a window change is detected via Accessibility
+                tick(isEventTriggered = true)
+            }
+        }
+    }
+
+    private suspend fun tick(isEventTriggered: Boolean = false) {
+        if (!isEventTriggered) tickCount++
+        val logThisTick = (tickCount % LOG_INTERVAL_TICKS == 0L) || isEventTriggered
 
         val config = configRepository.getConfig()
         if (!config.isMonitoringEnabled) {
-            if (logThisTick) Log.d(TAG, "tick: monitoring disabled")
             timer.reset()
             return
         }
 
-        val foregroundPackage = detector.getForegroundPackage()
-        if (foregroundPackage == null) {
-            if (logThisTick) Log.d(TAG, "tick: foreground package = null (usage stats unavailable?)")
+        val foregroundPackage = detector.getForegroundPackage() ?: return
+        
+        // If our own app is in foreground, we just wait.
+        if (foregroundPackage == packageName) {
+            isBlockingActive = true
+            return
+        }
+
+        // If we are already in BLOCKING state, we MUST be showing the blocking screen.
+        if (timer.getCurrentState() == SessionTimer.State.BLOCKING) {
+            // Re-launch with the package that triggered the block, to ensure we keep track of it
+            currentlyBlockedPackage?.let { pkg ->
+                if (logThisTick) Log.d(TAG, "tick: BLOCKING active, re-enforcing screen for $pkg")
+                launchBlockingScreen(pkg)
+            }
             return
         }
 
         val isExcluded = foregroundPackage in excludedPackages
+        
         if (logThisTick) {
-            Log.d(TAG, "tick #$tickCount: foreground=$foregroundPackage " +
-                "excluded=$isExcluded excludedCount=${excludedPackages.size} " +
-                "timerState=${timer.getCurrentState()} elapsed=${timer.getElapsedMs()}ms " +
-                "intervalMs=${config.blockIntervalSeconds * 1_000L}")
+            Log.d(TAG, "tick (event=$isEventTriggered): foreground=$foregroundPackage " +
+                "excluded=$isExcluded timerState=${timer.getCurrentState()}")
         }
 
         if (isExcluded) {
@@ -178,20 +162,11 @@ class MonitorService : Service() {
             return
         }
 
-        // If we're already in blocking state, re-launch if child navigated away
-        if (timer.getCurrentState() == SessionTimer.State.BLOCKING) {
-            if (foregroundPackage != packageName && !isBlockingActive) {
-                Log.i(TAG, "tick: re-launching block screen for $foregroundPackage")
-                launchBlockingScreen(foregroundPackage)
-            }
-            return
-        }
-
         val intervalMs = config.blockIntervalSeconds * 1_000L
         val shouldBlock = timer.tick(foregroundPackage, intervalMs)
 
         if (shouldBlock) {
-            Log.i(TAG, "tick: BLOCK triggered for $foregroundPackage after ${timer.getElapsedMs()}ms")
+            currentlyBlockedPackage = foregroundPackage
             val sessionId = recordBlockSession(foregroundPackage)
             pendingBlockSessionId = sessionId
             launchBlockingScreen(foregroundPackage)
@@ -222,6 +197,7 @@ class MonitorService : Service() {
 
     private fun handleBlockAcknowledged() {
         isBlockingActive = false
+        currentlyBlockedPackage = null
         val sessionId = pendingBlockSessionId
         if (sessionId != null) {
             serviceScope.launch {
@@ -232,44 +208,27 @@ class MonitorService : Service() {
         timer.onBlockAcknowledged()
     }
 
-    // -------------------------------------------------------------------------
-    // Permission health monitoring (tamper detection)
-    // -------------------------------------------------------------------------
-
     private suspend fun checkPermissionHealth() {
         val status = configRepository.getPermissionStatus()
-        Log.d(TAG, "healthCheck: usageStats=${status.isUsageStatsGranted} " +
-            "overlay=${status.isOverlayGranted} notifications=${status.isNotificationGranted} " +
-            "battery=${status.isBatteryOptimizationExempt} accessibility=${status.isAccessibilityEnabled}")
-
-        // Only log when state transitions from granted → revoked (not on every tick)
         if (!status.isUsageStatsGranted && lastUsageStatsGranted) {
-            Log.w(TAG, "healthCheck: USAGE_STATS permission REVOKED")
             recordTamperEvent(TamperType.USAGE_STATS_REVOKED)
             sendTamperNotification()
         }
         lastUsageStatsGranted = status.isUsageStatsGranted
 
         if (!status.isOverlayGranted && lastOverlayGranted) {
-            Log.w(TAG, "healthCheck: OVERLAY permission REVOKED")
             recordTamperEvent(TamperType.OVERLAY_PERMISSION_REVOKED)
         }
         lastOverlayGranted = status.isOverlayGranted
 
         if (!status.isAccessibilityEnabled && lastAccessibilityEnabled) {
-            Log.w(TAG, "healthCheck: ACCESSIBILITY disabled")
             recordTamperEvent(TamperType.ACCESSIBILITY_DISABLED)
         }
         lastAccessibilityEnabled = status.isAccessibilityEnabled
     }
 
     private suspend fun recordTamperEvent(type: TamperType) {
-        sessionRepository.insertTamperEvent(
-            TamperEvent(
-                type = type,
-                detectedAtMs = System.currentTimeMillis()
-            )
-        )
+        sessionRepository.insertTamperEvent(TamperEvent(type = type, detectedAtMs = System.currentTimeMillis()))
     }
 
     private fun sendTamperNotification() {
@@ -285,30 +244,17 @@ class MonitorService : Service() {
         nm.notify(TAMPER_NOTIFICATION_ID, notification)
     }
 
-    // -------------------------------------------------------------------------
-    // Monitored apps cache
-    // -------------------------------------------------------------------------
-
     private fun observeMonitoredApps() {
         serviceScope.launch {
             monitoredAppsRepository.observeMonitoredApps().collect { apps ->
-                val newExcluded = apps.filter { it.isEnabled }.map { it.packageName }.toSet()
-                Log.i(TAG, "excludedPackages updated: ${newExcluded.size} apps -> $newExcluded")
-                excludedPackages = newExcluded
+                excludedPackages = apps.filter { it.isEnabled }.map { it.packageName }.toSet()
             }
         }
     }
 
-    // -------------------------------------------------------------------------
-    // WakeLock
-    // -------------------------------------------------------------------------
-
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "kindergate:MonitorWakeLock"
-        ).apply {
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "kindergate:MonitorWakeLock").apply {
             acquire(WAKE_LOCK_TIMEOUT_MS)
         }
     }
@@ -317,10 +263,6 @@ class MonitorService : Service() {
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
     }
-
-    // -------------------------------------------------------------------------
-    // Foreground notification
-    // -------------------------------------------------------------------------
 
     private fun buildForegroundNotification(): Notification {
         return NotificationCompat.Builder(this, KinderGateApplication.CHANNEL_MONITOR)
@@ -335,10 +277,7 @@ class MonitorService : Service() {
 
     private fun mainActivityPendingIntent(): PendingIntent {
         val intent = Intent(this, MainActivity::class.java)
-        return PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        return PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
     companion object {
@@ -350,16 +289,10 @@ class MonitorService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val TAMPER_NOTIFICATION_ID = 1002
         private const val HEALTH_CHECK_INTERVAL_MS = 30_000L
-        private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1000L // 1 hour, auto-renew
-        private const val LOG_INTERVAL_TICKS = 10L // log every 10 seconds
+        private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1000L
+        private const val LOG_INTERVAL_TICKS = 10L
 
-        fun startIntent(context: Context) = Intent(context, MonitorService::class.java).apply {
-            action = ACTION_START
-        }
-
-        fun blockAcknowledgedIntent(context: Context) =
-            Intent(context, MonitorService::class.java).apply {
-                action = ACTION_BLOCK_ACKNOWLEDGED
-            }
+        fun startIntent(context: Context) = Intent(context, MonitorService::class.java).apply { action = ACTION_START }
+        fun blockAcknowledgedIntent(context: Context) = Intent(context, MonitorService::class.java).apply { action = ACTION_BLOCK_ACKNOWLEDGED }
     }
 }

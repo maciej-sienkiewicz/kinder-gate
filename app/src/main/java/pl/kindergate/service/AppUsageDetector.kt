@@ -3,7 +3,6 @@ package pl.kindergate.service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
-import android.os.Build
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -12,35 +11,10 @@ import javax.inject.Singleton
 /**
  * Detects the currently active (foreground) application.
  *
- * PRIMARY METHOD: UsageStatsManager.queryEvents()
- *
- * Design rationale:
- * - UsageStatsManager is the official Android API for this purpose
- * - queryEvents() gives us ACTIVITY_RESUMED events, which is more accurate
- *   than queryUsageStats() (which gives per-app aggregated time windows)
- * - Requires PACKAGE_USAGE_STATS permission (granted by user in Settings)
- * - Works on API 21+ without root
- * - NOT subject to Play Store restrictions unlike AccessibilityService
- *   for this specific use case
- *
- * FALLBACK METHOD: AccessibilityService
- *
- * KinderGateAccessibilityService maintains a companion object with the
- * last seen package name from typeWindowStateChanged events. We read
- * this if UsageStats is unavailable (some OEM ROMs block the API despite
- * the permission being granted).
- *
- * OEM-SPECIFIC NOTES:
- * - Samsung (OneUI): UsageStats works, may need "Allow usage tracking" in
- *   Digital Wellbeing settings on newer models
- * - Xiaomi (MIUI): Requires additional "Background pop-up" permission
- *   in Security app; UsageStats unreliable → Accessibility fallback important
- * - Huawei (EMUI/HarmonyOS): May restrict UsageStats; Accessibility works
- * - Oppo/Realme (ColorOS): Generally fine with standard approach
- *
- * ACCURACY: We query the last 2 seconds of events (configurable) to find
- * the most recent ACTIVITY_RESUMED. This gives us ~1s accuracy which is
- * sufficient for a 60s interval timer.
+ * Uses a hybrid approach:
+ * 1. Accessibility Service (Real-time, preferred)
+ * 2. UsageEvents (Fast fallback, queries last 10s)
+ * 3. UsageStats (Slow fallback, queries last hour)
  */
 @Singleton
 class AppUsageDetector @Inject constructor(
@@ -54,22 +28,23 @@ class AppUsageDetector @Inject constructor(
         }
     }
 
-    /**
-     * Returns the package name of the currently foreground app, or null if unknown.
-     * Called every [POLL_INTERVAL_MS] from MonitorService.
-     */
     fun getForegroundPackage(): String? {
-        return getViaUsageStats() ?: getViaAccessibilityService()
+        // Priority 1: Accessibility Service (Instant)
+        val fromAccessibility = KinderGateAccessibilityService.lastForegroundPackage.get()
+        if (fromAccessibility != null) return fromAccessibility
+
+        // Priority 2: Usage Events (Recent transitions)
+        val manager = usageStatsManager ?: return null
+        val now = System.currentTimeMillis()
+        val fromEvents = getViaUsageEvents(manager, now)
+        if (fromEvents != null) return fromEvents
+
+        // Priority 3: Usage Stats (Aggregated)
+        return getViaUsageStats(manager, now)
     }
 
-    private fun getViaUsageStats(): String? {
-        val manager = usageStatsManager ?: run {
-            Log.w(TAG, "getViaUsageStats: UsageStatsManager unavailable")
-            return null
-        }
+    private fun getViaUsageEvents(manager: UsageStatsManager, now: Long): String? {
         return try {
-            val now = System.currentTimeMillis()
-            // Query last 2s to ensure we capture the most recent foreground event
             val events = manager.queryEvents(now - QUERY_WINDOW_MS, now)
             val event = UsageEvents.Event()
             var lastResumedPackage: String? = null
@@ -83,32 +58,29 @@ class AppUsageDetector @Inject constructor(
                     lastResumedPackage = event.packageName
                 }
             }
-
-            // Filter out our own blocking screen to prevent self-detection loop
-            if (lastResumedPackage == context.packageName) null
-            else lastResumedPackage
-        } catch (e: SecurityException) {
-            // Permission revoked at runtime – tamper detection handles this
-            Log.e(TAG, "getViaUsageStats: SecurityException – PACKAGE_USAGE_STATS revoked?", e)
-            null
+            lastResumedPackage
         } catch (e: Exception) {
-            Log.e(TAG, "getViaUsageStats: unexpected error", e)
             null
         }
     }
 
-    private fun getViaAccessibilityService(): String? {
-        // KinderGateAccessibilityService.lastForegroundPackage is updated
-        // from the accessibility event thread. Read is atomic for String references.
-        val pkg = KinderGateAccessibilityService.lastForegroundPackage.get()
-            .takeIf { it != null && it != context.packageName }
-        if (pkg != null) Log.d(TAG, "getViaAccessibilityService: $pkg")
-        return pkg
+    private fun getViaUsageStats(manager: UsageStatsManager, now: Long): String? {
+        return try {
+            val stats = manager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                now - 1000 * 60 * 60,
+                now
+            )
+            val lastApp = stats?.filter { it.lastTimeUsed > 0 }?.maxByOrNull { it.lastTimeUsed }
+            lastApp?.packageName
+        } catch (e: Exception) {
+            null
+        }
     }
 
     companion object {
         private const val TAG = "KG_Detector"
         const val POLL_INTERVAL_MS = 1_000L
-        const val QUERY_WINDOW_MS = 2_000L
+        const val QUERY_WINDOW_MS = 10_000L // 10s window for events
     }
 }
