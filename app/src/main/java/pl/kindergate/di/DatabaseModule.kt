@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import pl.kindergate.data.local.db.AppDatabase
 import pl.kindergate.data.local.db.dao.BlockSessionDao
+import pl.kindergate.data.local.db.dao.ChildDao
 import pl.kindergate.data.local.db.dao.MonitoredAppDao
 import pl.kindergate.data.local.db.dao.TamperEventDao
 import javax.inject.Singleton
@@ -36,4 +37,7 @@ object DatabaseModule {
 
     @Provides
     fun provideTamperEventDao(db: AppDatabase): TamperEventDao = db.tamperEventDao()
+
+    @Provides
+    fun provideChildDao(db: AppDatabase): ChildDao = db.childDao()
 }

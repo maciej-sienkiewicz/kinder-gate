@@ -16,12 +16,14 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pl.kindergate.domain.model.BlockSession
+import pl.kindergate.domain.model.ChildProfile
 import pl.kindergate.domain.model.MonitoredApp
 import pl.kindergate.domain.model.PermissionStatus
 import pl.kindergate.domain.model.TamperEvent
 import pl.kindergate.domain.repository.ConfigRepository
 import pl.kindergate.domain.repository.MonitoredAppsRepository
 import pl.kindergate.domain.repository.SessionRepository
+import pl.kindergate.domain.usecase.GetChildrenUseCase
 import pl.kindergate.service.MonitorService
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -32,7 +34,9 @@ data class DashboardUiState(
     val todaySessions: List<BlockSession> = emptyList(),
     val recentTamperEvents: List<TamperEvent> = emptyList(),
     val isServiceRunning: Boolean = false,
-    val unacknowledgedTamperCount: Int = 0
+    val unacknowledgedTamperCount: Int = 0,
+    /** The currently active child profile; null when not yet configured. */
+    val childProfile: ChildProfile? = null,
 )
 
 @HiltViewModel
@@ -40,7 +44,8 @@ class DashboardViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val configRepository: ConfigRepository,
     private val monitoredAppsRepository: MonitoredAppsRepository,
-    private val sessionRepository: SessionRepository
+    private val sessionRepository: SessionRepository,
+    private val getChildrenUseCase: GetChildrenUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -49,6 +54,7 @@ class DashboardViewModel @Inject constructor(
     init {
         observeData()
         refreshPermissions()
+        refreshChildProfile()
         // Ensure service is running whenever dashboard is opened
         startService()
     }
@@ -80,6 +86,19 @@ class DashboardViewModel @Inject constructor(
             val status = configRepository.getPermissionStatus()
             val tamperCount = sessionRepository.getUnacknowledgedTamperCount()
             _uiState.update { it.copy(permissionStatus = status, unacknowledgedTamperCount = tamperCount) }
+        }
+    }
+
+    fun refreshChildProfile() {
+        viewModelScope.launch {
+            val selectedId = configRepository.getSelectedChildId()
+            val profile = if (selectedId != null) {
+                getChildrenUseCase().find { it.id == selectedId }
+                    ?: getChildrenUseCase().firstOrNull()
+            } else {
+                getChildrenUseCase().firstOrNull()
+            }
+            _uiState.update { it.copy(childProfile = profile) }
         }
     }
 

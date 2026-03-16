@@ -34,7 +34,8 @@ class ConfigRepositoryImpl @Inject constructor(
         blockIntervalSeconds = prefs.getBlockIntervalSeconds(),
         isMonitoringEnabled = prefs.isMonitoringEnabled(),
         hasCompletedOnboarding = prefs.isOnboardingComplete(),
-        pinConfigured = prefs.isPinConfigured()
+        pinConfigured = prefs.isPinConfigured(),
+        selectedChildId = prefs.getSelectedChildId(),
     )
 
     override suspend fun updateConfig(config: AppConfig) {
@@ -65,6 +66,10 @@ class ConfigRepositoryImpl @Inject constructor(
     override fun observePermissionStatus(): Flow<PermissionStatus> = flow {
         emit(getPermissionStatus())
     }
+
+    override suspend fun setSelectedChildId(childId: String) = prefs.setSelectedChildId(childId)
+
+    override suspend fun getSelectedChildId(): String? = prefs.getSelectedChildId()
 
     private fun checkUsageStatsPermission(): Boolean {
         return try {

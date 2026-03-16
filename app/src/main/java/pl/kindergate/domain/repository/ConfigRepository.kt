@@ -20,4 +20,8 @@ interface ConfigRepository {
     // Permission status (read from system at call time, not persisted)
     suspend fun getPermissionStatus(): PermissionStatus
     fun observePermissionStatus(): Flow<PermissionStatus>
+
+    // Child profile selection
+    suspend fun setSelectedChildId(childId: String)
+    suspend fun getSelectedChildId(): String?
 }

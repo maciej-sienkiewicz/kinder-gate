@@ -14,25 +14,36 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import pl.kindergate.domain.model.ChildProfile
 import pl.kindergate.domain.model.PermissionStatus
 import pl.kindergate.domain.repository.ConfigRepository
+import pl.kindergate.domain.usecase.UpsertChildUseCase
 import pl.kindergate.service.MonitorService
+import java.util.UUID
 import javax.inject.Inject
 
 data class OnboardingUiState(
     val currentStep: Int = 0,
-    val totalSteps: Int = 5,
+    /** Steps: 0=Welcome, 1=Permissions, 2=PIN, 3=ChildProfile, 4=AppPicker, 5=Completion */
+    val totalSteps: Int = 6,
     val permissions: PermissionStatus? = null,
     val pinInput: String = "",
     val pinConfirmInput: String = "",
     val pinError: String? = null,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    // Child profile step
+    val childName: String = "",
+    val childAgeInput: String = "",
+    val childGradeLevelInput: String = "",
+    val childNameError: String? = null,
+    val childAgeError: String? = null,
 )
 
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val configRepository: ConfigRepository
+    private val configRepository: ConfigRepository,
+    private val upsertChildUseCase: UpsertChildUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(OnboardingUiState())
@@ -91,6 +102,56 @@ class OnboardingViewModel @Inject constructor(
                 true
             }
         }
+    }
+
+    fun onChildNameInput(value: String) {
+        _uiState.update { it.copy(childName = value, childNameError = null) }
+    }
+
+    fun onChildAgeInput(value: String) {
+        if (value.length <= 2 && value.all { it.isDigit() }) {
+            _uiState.update { it.copy(childAgeInput = value, childAgeError = null) }
+        }
+    }
+
+    fun onChildGradeLevelInput(value: String) {
+        if (value.length <= 1 && value.all { it.isDigit() }) {
+            _uiState.update { it.copy(childGradeLevelInput = value) }
+        }
+    }
+
+    /**
+     * Validates child profile fields and saves to repository.
+     * Returns true on success, false when there are validation errors.
+     */
+    fun saveChildProfile(): Boolean {
+        val state = _uiState.value
+        val name = state.childName.trim()
+        val age = state.childAgeInput.toIntOrNull()
+        val gradeLevel = state.childGradeLevelInput.toIntOrNull()
+
+        var hasError = false
+        if (name.isBlank()) {
+            _uiState.update { it.copy(childNameError = "Imię nie może być puste") }
+            hasError = true
+        }
+        if (age == null || age < 3 || age > 18) {
+            _uiState.update { it.copy(childAgeError = "Wiek musi być liczbą od 3 do 18") }
+            hasError = true
+        }
+        if (hasError) return false
+
+        val profile = ChildProfile(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            age = age!!,
+            gradeLevel = gradeLevel,
+        )
+        viewModelScope.launch {
+            upsertChildUseCase(profile)
+            configRepository.setSelectedChildId(profile.id)
+        }
+        return true
     }
 
     fun completeOnboarding() {

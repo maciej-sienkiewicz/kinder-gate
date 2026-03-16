@@ -9,6 +9,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import pl.kindergate.feature.apppicker.AppPickerScreen
+import pl.kindergate.feature.children.ChildProfileScreen
 import pl.kindergate.feature.dashboard.DashboardScreen
 import pl.kindergate.feature.onboarding.OnboardingScreen
 import pl.kindergate.feature.onboarding.OnboardingViewModel
@@ -17,11 +18,12 @@ sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
     data object Dashboard : Screen("dashboard")
     data object AppPicker : Screen("app_picker")
+    data object ChildProfile : Screen("child_profile")
 }
 
 @Composable
 fun AppNavigation(
-    navController: NavHostController = rememberNavController()
+    navController: NavHostController = rememberNavController(),
 ) {
     val onboardingVm: OnboardingViewModel = hiltViewModel()
     val isOnboardingDone by onboardingVm.isOnboardingComplete.collectAsStateWithLifecycle(initialValue = false)
@@ -44,13 +46,21 @@ fun AppNavigation(
 
         composable(Screen.Dashboard.route) {
             DashboardScreen(
-                onEditApps = { navController.navigate(Screen.AppPicker.route) }
+                onEditApps = { navController.navigate(Screen.AppPicker.route) },
+                onEditChildProfile = { navController.navigate(Screen.ChildProfile.route) }
             )
         }
 
         composable(Screen.AppPicker.route) {
             AppPickerScreen(
                 onDone = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.ChildProfile.route) {
+            ChildProfileScreen(
+                onSaved = { navController.popBackStack() },
+                onBack = { navController.popBackStack() }
             )
         }
     }

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
@@ -46,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import pl.kindergate.domain.model.ChildProfile
 import pl.kindergate.domain.model.HealthLevel
 import pl.kindergate.domain.model.PermissionStatus
 import pl.kindergate.ui.theme.HealthCritical
@@ -56,6 +58,7 @@ import pl.kindergate.ui.theme.HealthWarning
 @Composable
 fun DashboardScreen(
     onEditApps: () -> Unit,
+    onEditChildProfile: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -126,6 +129,14 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
+
+            // Child profile card
+            item {
+                ChildProfileCard(
+                    profile = state.childProfile,
+                    onEdit = onEditChildProfile
+                )
             }
 
             // Excluded apps section
@@ -352,6 +363,50 @@ private fun PermissionRow(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
             ) {
                 Text("Udziel", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChildProfileCard(
+    profile: ChildProfile?,
+    onEdit: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Person,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Profil dziecka",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                if (profile != null) {
+                    val grade = profile.gradeLevel?.let { ", klasa $it" } ?: ""
+                    Text(
+                        text = "${profile.name}, ${profile.age} lat$grade",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = "Nie skonfigurowano. Kliknij, aby dodać.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            OutlinedButton(onClick = onEdit) {
+                Text(if (profile != null) "Edytuj" else "Dodaj")
             }
         }
     }

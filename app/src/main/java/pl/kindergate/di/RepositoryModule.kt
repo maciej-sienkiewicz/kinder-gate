@@ -4,9 +4,11 @@ import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import pl.kindergate.data.repository.ChildRepositoryImpl
 import pl.kindergate.data.repository.ConfigRepositoryImpl
 import pl.kindergate.data.repository.MonitoredAppsRepositoryImpl
 import pl.kindergate.data.repository.SessionRepositoryImpl
+import pl.kindergate.domain.repository.ChildRepository
 import pl.kindergate.domain.repository.ConfigRepository
 import pl.kindergate.domain.repository.MonitoredAppsRepository
 import pl.kindergate.domain.repository.SessionRepository
@@ -33,4 +35,10 @@ abstract class RepositoryModule {
     abstract fun bindConfigRepository(
         impl: ConfigRepositoryImpl
     ): ConfigRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindChildRepository(
+        impl: ChildRepositoryImpl
+    ): ChildRepository
 }

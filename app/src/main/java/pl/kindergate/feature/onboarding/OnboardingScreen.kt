@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.kindergate.domain.model.PermissionStatus
+import pl.kindergate.feature.children.ChildProfileFormContent
+import pl.kindergate.feature.children.ChildProfileUiState
 
 @Composable
 fun OnboardingScreen(
@@ -120,10 +122,23 @@ fun OnboardingScreen(
                             if (viewModel.savePin()) viewModel.nextStep()
                         }
                     )
-                    3 -> AppPickerPlaceholderStep(
+                    3 -> ChildProfileStep(
+                        name = state.childName,
+                        ageInput = state.childAgeInput,
+                        gradeLevelInput = state.childGradeLevelInput,
+                        nameError = state.childNameError,
+                        ageError = state.childAgeError,
+                        onNameChange = viewModel::onChildNameInput,
+                        onAgeChange = viewModel::onChildAgeInput,
+                        onGradeLevelChange = viewModel::onChildGradeLevelInput,
+                        onNext = {
+                            if (viewModel.saveChildProfile()) viewModel.nextStep()
+                        }
+                    )
+                    4 -> AppPickerPlaceholderStep(
                         onNext = viewModel::nextStep
                     )
-                    4 -> CompletionStep(
+                    5 -> CompletionStep(
                         onFinish = {
                             viewModel.completeOnboarding()
                             onComplete()
@@ -409,6 +424,36 @@ private fun PinSetupStep(
             Text("Ustaw PIN i kontynuuj →")
         }
     }
+}
+
+@Composable
+private fun ChildProfileStep(
+    name: String,
+    ageInput: String,
+    gradeLevelInput: String,
+    nameError: String?,
+    ageError: String?,
+    onNameChange: (String) -> Unit,
+    onAgeChange: (String) -> Unit,
+    onGradeLevelChange: (String) -> Unit,
+    onNext: () -> Unit,
+) {
+    ChildProfileFormContent(
+        state = ChildProfileUiState(
+            name = name,
+            ageInput = ageInput,
+            gradeLevelInput = gradeLevelInput,
+            nameError = nameError,
+            ageError = ageError,
+        ),
+        onNameChange = onNameChange,
+        onAgeChange = onAgeChange,
+        onGradeLevelChange = onGradeLevelChange,
+        onSave = onNext,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+    )
 }
 
 @Composable

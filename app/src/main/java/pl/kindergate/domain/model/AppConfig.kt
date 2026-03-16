@@ -14,5 +14,12 @@ data class AppConfig(
     val blockIntervalSeconds: Int = 60,
     val isMonitoringEnabled: Boolean = true,
     val hasCompletedOnboarding: Boolean = false,
-    val pinConfigured: Boolean = false
+    val pinConfigured: Boolean = false,
+    /**
+     * UUID of the currently active child profile.
+     * Null until the parent completes the child-profile setup step.
+     * MVP: only one child per device, so this is always the sole profile's id
+     * once onboarding is done.
+     */
+    val selectedChildId: String? = null,
 )

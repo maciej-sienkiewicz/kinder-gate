@@ -89,6 +89,12 @@ class SecurePreferencesManager @Inject constructor(
 
     fun getServiceStartedAtElapsed(): Long = prefs.getLong(KEY_SERVICE_STARTED_ELAPSED, 0L)
 
+    fun setSelectedChildId(childId: String) {
+        prefs.edit().putString(KEY_SELECTED_CHILD_ID, childId).apply()
+    }
+
+    fun getSelectedChildId(): String? = prefs.getString(KEY_SELECTED_CHILD_ID, null)
+
     private fun sha256(input: String): String {
         val bytes = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
         return bytes.joinToString("") { "%02x".format(it) }
@@ -102,5 +108,6 @@ class SecurePreferencesManager @Inject constructor(
         private const val KEY_BLOCK_INTERVAL = "block_interval_s"
         private const val KEY_LAST_UPTIME = "last_service_uptime_ms"
         private const val KEY_SERVICE_STARTED_ELAPSED = "service_started_elapsed_ms"
+        private const val KEY_SELECTED_CHILD_ID = "selected_child_id"
     }
 }
