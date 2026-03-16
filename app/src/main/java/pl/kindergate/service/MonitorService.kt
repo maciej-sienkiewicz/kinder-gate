@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -87,11 +88,15 @@ class MonitorService : Service() {
     // Track whether we've launched blocking to avoid duplicate launches
     @Volatile private var isBlockingActive: Boolean = false
 
+    // Tick counter for periodic logging (avoid per-second spam)
+    private var tickCount = 0L
+
     // Pending block session ID for acknowledgment
     @Volatile private var pendingBlockSessionId: Long? = null
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "Service created")
         acquireWakeLock()
         startForeground(NOTIFICATION_ID, buildForegroundNotification())
         securePrefs.setServiceStartedAtElapsed(SystemClock.elapsedRealtime())
@@ -123,7 +128,11 @@ class MonitorService : Service() {
     // -------------------------------------------------------------------------
 
     private fun startMonitoring() {
-        if (monitorJob?.isActive == true) return
+        if (monitorJob?.isActive == true) {
+            Log.d(TAG, "startMonitoring: already running, skipping")
+            return
+        }
+        Log.i(TAG, "startMonitoring: starting monitor loop")
         monitorJob = serviceScope.launch {
             while (isActive) {
                 tick()
@@ -139,13 +148,29 @@ class MonitorService : Service() {
     }
 
     private suspend fun tick() {
-        if (!configRepository.getConfig().isMonitoringEnabled) {
+        tickCount++
+        val logThisTick = tickCount % LOG_INTERVAL_TICKS == 0L
+
+        val config = configRepository.getConfig()
+        if (!config.isMonitoringEnabled) {
+            if (logThisTick) Log.d(TAG, "tick: monitoring disabled")
             timer.reset()
             return
         }
 
-        val foregroundPackage = detector.getForegroundPackage() ?: return
+        val foregroundPackage = detector.getForegroundPackage()
+        if (foregroundPackage == null) {
+            if (logThisTick) Log.d(TAG, "tick: foreground package = null (usage stats unavailable?)")
+            return
+        }
+
         val isExcluded = foregroundPackage in excludedPackages
+        if (logThisTick) {
+            Log.d(TAG, "tick #$tickCount: foreground=$foregroundPackage " +
+                "excluded=$isExcluded excludedCount=${excludedPackages.size} " +
+                "timerState=${timer.getCurrentState()} elapsed=${timer.getElapsedMs()}ms " +
+                "intervalMs=${config.blockIntervalSeconds * 1_000L}")
+        }
 
         if (isExcluded) {
             timer.onNonMonitoredForeground()
@@ -155,16 +180,18 @@ class MonitorService : Service() {
 
         // If we're already in blocking state, re-launch if child navigated away
         if (timer.getCurrentState() == SessionTimer.State.BLOCKING) {
-            if (foregroundPackage != this::class.java.`package`?.name && !isBlockingActive) {
+            if (foregroundPackage != packageName && !isBlockingActive) {
+                Log.i(TAG, "tick: re-launching block screen for $foregroundPackage")
                 launchBlockingScreen(foregroundPackage)
             }
             return
         }
 
-        val intervalMs = configRepository.getConfig().blockIntervalSeconds * 1_000L
+        val intervalMs = config.blockIntervalSeconds * 1_000L
         val shouldBlock = timer.tick(foregroundPackage, intervalMs)
 
         if (shouldBlock) {
+            Log.i(TAG, "tick: BLOCK triggered for $foregroundPackage after ${timer.getElapsedMs()}ms")
             val sessionId = recordBlockSession(foregroundPackage)
             pendingBlockSessionId = sessionId
             launchBlockingScreen(foregroundPackage)
@@ -211,21 +238,26 @@ class MonitorService : Service() {
 
     private suspend fun checkPermissionHealth() {
         val status = configRepository.getPermissionStatus()
+        Log.d(TAG, "healthCheck: usageStats=${status.isUsageStatsGranted} " +
+            "overlay=${status.isOverlayGranted} notifications=${status.isNotificationGranted} " +
+            "battery=${status.isBatteryOptimizationExempt} accessibility=${status.isAccessibilityEnabled}")
 
         // Only log when state transitions from granted → revoked (not on every tick)
         if (!status.isUsageStatsGranted && lastUsageStatsGranted) {
+            Log.w(TAG, "healthCheck: USAGE_STATS permission REVOKED")
             recordTamperEvent(TamperType.USAGE_STATS_REVOKED)
             sendTamperNotification()
         }
         lastUsageStatsGranted = status.isUsageStatsGranted
 
         if (!status.isOverlayGranted && lastOverlayGranted) {
+            Log.w(TAG, "healthCheck: OVERLAY permission REVOKED")
             recordTamperEvent(TamperType.OVERLAY_PERMISSION_REVOKED)
         }
         lastOverlayGranted = status.isOverlayGranted
 
         if (!status.isAccessibilityEnabled && lastAccessibilityEnabled) {
-            // Accessibility is optional but its revocation is still worth noting
+            Log.w(TAG, "healthCheck: ACCESSIBILITY disabled")
             recordTamperEvent(TamperType.ACCESSIBILITY_DISABLED)
         }
         lastAccessibilityEnabled = status.isAccessibilityEnabled
@@ -260,7 +292,9 @@ class MonitorService : Service() {
     private fun observeMonitoredApps() {
         serviceScope.launch {
             monitoredAppsRepository.observeMonitoredApps().collect { apps ->
-                excludedPackages = apps.filter { it.isEnabled }.map { it.packageName }.toSet()
+                val newExcluded = apps.filter { it.isEnabled }.map { it.packageName }.toSet()
+                Log.i(TAG, "excludedPackages updated: ${newExcluded.size} apps -> $newExcluded")
+                excludedPackages = newExcluded
             }
         }
     }
@@ -308,6 +342,7 @@ class MonitorService : Service() {
     }
 
     companion object {
+        const val TAG = "KG_Monitor"
         const val ACTION_START = "pl.kindergate.action.START_MONITOR"
         const val ACTION_STOP = "pl.kindergate.action.STOP_MONITOR"
         const val ACTION_BLOCK_ACKNOWLEDGED = "pl.kindergate.action.BLOCK_ACK"
@@ -316,6 +351,7 @@ class MonitorService : Service() {
         private const val TAMPER_NOTIFICATION_ID = 1002
         private const val HEALTH_CHECK_INTERVAL_MS = 30_000L
         private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1000L // 1 hour, auto-renew
+        private const val LOG_INTERVAL_TICKS = 10L // log every 10 seconds
 
         fun startIntent(context: Context) = Intent(context, MonitorService::class.java).apply {
             action = ACTION_START

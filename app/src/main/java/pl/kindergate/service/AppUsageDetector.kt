@@ -4,6 +4,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -62,7 +63,10 @@ class AppUsageDetector @Inject constructor(
     }
 
     private fun getViaUsageStats(): String? {
-        val manager = usageStatsManager ?: return null
+        val manager = usageStatsManager ?: run {
+            Log.w(TAG, "getViaUsageStats: UsageStatsManager unavailable")
+            return null
+        }
         return try {
             val now = System.currentTimeMillis()
             // Query last 2s to ensure we capture the most recent foreground event
@@ -85,8 +89,10 @@ class AppUsageDetector @Inject constructor(
             else lastResumedPackage
         } catch (e: SecurityException) {
             // Permission revoked at runtime – tamper detection handles this
+            Log.e(TAG, "getViaUsageStats: SecurityException – PACKAGE_USAGE_STATS revoked?", e)
             null
         } catch (e: Exception) {
+            Log.e(TAG, "getViaUsageStats: unexpected error", e)
             null
         }
     }
@@ -94,11 +100,14 @@ class AppUsageDetector @Inject constructor(
     private fun getViaAccessibilityService(): String? {
         // KinderGateAccessibilityService.lastForegroundPackage is updated
         // from the accessibility event thread. Read is atomic for String references.
-        return KinderGateAccessibilityService.lastForegroundPackage.get()
+        val pkg = KinderGateAccessibilityService.lastForegroundPackage.get()
             .takeIf { it != null && it != context.packageName }
+        if (pkg != null) Log.d(TAG, "getViaAccessibilityService: $pkg")
+        return pkg
     }
 
     companion object {
+        private const val TAG = "KG_Detector"
         const val POLL_INTERVAL_MS = 1_000L
         const val QUERY_WINDOW_MS = 2_000L
     }

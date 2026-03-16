@@ -1,6 +1,7 @@
 package pl.kindergate.service
 
 import android.os.SystemClock
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +76,7 @@ class SessionTimer @Inject constructor() {
                     elapsedInSessionMs = 0L,
                     sessionStartElapsedMs = now
                 )
+                Log.i(TAG, "IDLE → RUNNING for $packageName (interval=${intervalMs}ms)")
                 false
             }
 
@@ -87,6 +89,7 @@ class SessionTimer @Inject constructor() {
                         elapsedInSessionMs = 0L,
                         sessionStartElapsedMs = now
                     )
+                    Log.i(TAG, "RUNNING: app switched ${current.activePackage} → $packageName, timer reset")
                     return false
                 }
 
@@ -95,6 +98,7 @@ class SessionTimer @Inject constructor() {
 
                 if (elapsed >= intervalMs) {
                     _snapshot.value = _snapshot.value.copy(state = State.BLOCKING)
+                    Log.i(TAG, "RUNNING → BLOCKING for $packageName after ${elapsed}ms")
                     true
                 } else {
                     false
@@ -125,6 +129,7 @@ class SessionTimer @Inject constructor() {
         if (current.state == State.RUNNING) {
             // Pause by transitioning to IDLE, preserving accumulated time
             // MVP: reset to avoid complexity of partial windows
+            Log.d(TAG, "RUNNING → IDLE (excluded app in foreground, timer reset)")
             _snapshot.value = current.copy(
                 state = State.IDLE,
                 elapsedInSessionMs = 0L
@@ -139,6 +144,7 @@ class SessionTimer @Inject constructor() {
      * Resets to IDLE so a fresh 60s window begins.
      */
     fun onBlockAcknowledged() {
+        Log.i(TAG, "BLOCKING → IDLE (block acknowledged)")
         windowStartElapsedMs = 0L
         _snapshot.value = TimerSnapshot(
             state = State.IDLE,
@@ -163,6 +169,10 @@ class SessionTimer @Inject constructor() {
             elapsedInSessionMs = 0L,
             sessionStartElapsedMs = 0L
         )
+    }
+
+    companion object {
+        private const val TAG = "KG_Timer"
     }
 
     fun getCurrentState(): State = _snapshot.value.state

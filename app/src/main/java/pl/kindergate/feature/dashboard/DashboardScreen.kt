@@ -17,8 +17,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
@@ -27,6 +30,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -37,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -54,6 +59,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         viewModel.refreshPermissions()
@@ -83,12 +89,16 @@ fun DashboardScreen(
         ) {
             item { Spacer(Modifier.height(8.dp)) }
 
-            // System health card
+            // Per-permission status card
             item {
                 state.permissionStatus?.let { status ->
-                    HealthCard(
+                    PermissionsCard(
                         status = status,
-                        onTap = { /* open permission settings */ }
+                        onGrantUsageStats = { context.startActivity(viewModel.getUsageStatsSettingsIntent()) },
+                        onGrantOverlay = { context.startActivity(viewModel.getOverlaySettingsIntent()) },
+                        onGrantNotification = { context.startActivity(viewModel.getNotificationSettingsIntent()) },
+                        onGrantBattery = { context.startActivity(viewModel.getBatteryOptimizationIntent()) },
+                        onGrantAccessibility = { context.startActivity(viewModel.getAccessibilitySettingsIntent()) }
                     )
                 }
             }
@@ -118,7 +128,7 @@ fun DashboardScreen(
                 }
             }
 
-            // Monitored apps section
+            // Excluded apps section
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -211,37 +221,137 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun HealthCard(status: PermissionStatus, onTap: () -> Unit) {
-    val (color, icon, text) = when (status.healthLevel) {
-        HealthLevel.OK -> Triple(HealthOk, Icons.Default.CheckCircle, "Ochrona w pełni aktywna")
-        HealthLevel.WARNING -> Triple(HealthWarning, Icons.Default.Warning, "Brakuje niektórych uprawnień")
-        HealthLevel.CRITICAL -> Triple(HealthCritical, Icons.Default.Error, "Ochrona wyłączona!")
+private fun PermissionsCard(
+    status: PermissionStatus,
+    onGrantUsageStats: () -> Unit,
+    onGrantOverlay: () -> Unit,
+    onGrantNotification: () -> Unit,
+    onGrantBattery: () -> Unit,
+    onGrantAccessibility: () -> Unit
+) {
+    val headerColor = when (status.healthLevel) {
+        HealthLevel.OK -> HealthOk
+        HealthLevel.WARNING -> HealthWarning
+        HealthLevel.CRITICAL -> HealthCritical
+    }
+    val headerIcon = when (status.healthLevel) {
+        HealthLevel.OK -> Icons.Default.CheckCircle
+        HealthLevel.WARNING -> Icons.Default.Warning
+        HealthLevel.CRITICAL -> Icons.Default.Error
+    }
+    val headerText = when (status.healthLevel) {
+        HealthLevel.OK -> "Ochrona w pełni aktywna"
+        HealthLevel.WARNING -> "Brakuje niektórych uprawnień"
+        HealthLevel.CRITICAL -> "Ochrona wyłączona!"
     }
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onTap),
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f)),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(32.dp))
-            Column {
-                Text(text = text, fontWeight = FontWeight.Bold, color = color)
-                if (!status.isUsageStatsGranted) {
-                    Text("• Brak dostępu do statystyk użycia", style = MaterialTheme.typography.bodySmall)
-                }
-                if (!status.isNotificationGranted) {
-                    Text("• Brak uprawnień do powiadomień", style = MaterialTheme.typography.bodySmall)
-                }
-                if (!status.isBatteryOptimizationExempt) {
-                    Text("• Optymalizacja baterii może ograniczać działanie", style = MaterialTheme.typography.bodySmall)
-                }
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(headerIcon, null, tint = headerColor, modifier = Modifier.size(24.dp))
+                Text(
+                    text = headerText,
+                    fontWeight = FontWeight.Bold,
+                    color = headerColor,
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            PermissionRow(
+                title = "Dostęp do statystyk użycia",
+                description = "Wymagane – wykrywa aktywną aplikację",
+                isGranted = status.isUsageStatsGranted,
+                isRequired = true,
+                onGrant = onGrantUsageStats
+            )
+            PermissionRow(
+                title = "Powiadomienia",
+                description = "Wymagane dla usługi w tle",
+                isGranted = status.isNotificationGranted,
+                isRequired = true,
+                onGrant = onGrantNotification
+            )
+            PermissionRow(
+                title = "Wyświetlanie nad aplikacjami",
+                description = "Zapasowy mechanizm blokady",
+                isGranted = status.isOverlayGranted,
+                isRequired = false,
+                onGrant = onGrantOverlay
+            )
+            PermissionRow(
+                title = "Wyłącz optymalizację baterii",
+                description = "Zapewnia ciągłe działanie w tle",
+                isGranted = status.isBatteryOptimizationExempt,
+                isRequired = false,
+                onGrant = onGrantBattery
+            )
+            PermissionRow(
+                title = "Usługa dostępności",
+                description = "Zapasowa detekcja (Xiaomi/Huawei)",
+                isGranted = status.isAccessibilityEnabled,
+                isRequired = false,
+                onGrant = onGrantAccessibility
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    title: String,
+    description: String,
+    isGranted: Boolean,
+    isRequired: Boolean,
+    onGrant: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            imageVector = if (isGranted) Icons.Default.Check else Icons.Default.Lock,
+            contentDescription = null,
+            tint = if (isGranted) HealthOk else if (isRequired) HealthCritical else HealthWarning,
+            modifier = Modifier.size(20.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Row {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (isRequired) Text(
+                    text = " *",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (!isGranted) {
+            OutlinedButton(
+                onClick = onGrant,
+                modifier = Modifier.height(32.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
+            ) {
+                Text("Udziel", style = MaterialTheme.typography.labelSmall)
             }
         }
     }

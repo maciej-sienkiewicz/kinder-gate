@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dagger.hilt.android.qualifiers.ApplicationContext
+import pl.kindergate.BuildConfig
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -74,7 +75,7 @@ class SecurePreferencesManager @Inject constructor(
         prefs.edit().putInt(KEY_BLOCK_INTERVAL, seconds).apply()
     }
 
-    fun getBlockIntervalSeconds(): Int = prefs.getInt(KEY_BLOCK_INTERVAL, 60)
+    fun getBlockIntervalSeconds(): Int = prefs.getInt(KEY_BLOCK_INTERVAL, BuildConfig.BLOCK_INTERVAL_SECONDS)
 
     fun setLastKnownServiceUptimeMs(uptimeMs: Long) {
         prefs.edit().putLong(KEY_LAST_UPTIME, uptimeMs).apply()

@@ -2,7 +2,9 @@ package pl.kindergate.feature.dashboard
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -47,6 +49,8 @@ class DashboardViewModel @Inject constructor(
     init {
         observeData()
         refreshPermissions()
+        // Ensure service is running whenever dashboard is opened
+        startService()
     }
 
     private fun observeData() {
@@ -86,6 +90,7 @@ class DashboardViewModel @Inject constructor(
         } else {
             context.startService(intent)
         }
+        _uiState.update { it.copy(isServiceRunning = true) }
     }
 
     fun stopService() {
@@ -94,5 +99,35 @@ class DashboardViewModel @Inject constructor(
                 action = MonitorService.ACTION_STOP
             }
         )
+        _uiState.update { it.copy(isServiceRunning = false) }
     }
+
+    // Intent helpers for opening permission settings from the dashboard
+    fun getUsageStatsSettingsIntent(): Intent =
+        Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+
+    fun getOverlaySettingsIntent(): Intent =
+        Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:${context.packageName}")
+        )
+
+    fun getNotificationSettingsIntent(): Intent =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            }
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+        }
+
+    fun getBatteryOptimizationIntent(): Intent =
+        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:${context.packageName}")
+        }
+
+    fun getAccessibilitySettingsIntent(): Intent =
+        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
 }
