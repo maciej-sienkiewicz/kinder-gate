@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "pl.kindergate"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "pl.kindergate"
@@ -86,6 +86,9 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.splash)
     implementation(libs.material)
+
+    // Material
+    implementation(libs.google.material)
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))

@@ -68,7 +68,9 @@
             android:taskAffinity="pl.kindergate.blocking"
             android:theme="@style/Theme.KinderGate.Blocking"
             android:launchMode="singleInstance"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
 
         <!-- Foreground monitoring service: the engine of the app.
              SPECIAL_USE is the correct type for parental control monitoring. -->
