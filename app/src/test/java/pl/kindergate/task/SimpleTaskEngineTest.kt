@@ -6,16 +6,23 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import pl.kindergate.data.engine.DivisionEvaluator
+import pl.kindergate.data.engine.ExpressionEvaluator
+import pl.kindergate.data.engine.LetterTracingEvaluator
+import pl.kindergate.data.engine.MultiplicationEvaluator
 import pl.kindergate.data.engine.SimpleAdditionEvaluator
 import pl.kindergate.data.engine.SimpleTaskEngine
+import pl.kindergate.data.engine.SubtractionEvaluator
 import pl.kindergate.data.repository.InMemoryTaskRepository
+import pl.kindergate.domain.model.task.Task
+import pl.kindergate.domain.model.task.TaskContent
 import pl.kindergate.domain.model.task.TaskContext
 
 /**
  * Unit tests for [SimpleTaskEngine].
  *
- * Uses real [InMemoryTaskRepository] and [SimpleAdditionEvaluator] – both are pure/fast
- * so we don't need fakes here. If the catalog or evaluator grow expensive, swap with fakes.
+ * Uses real [InMemoryTaskRepository] and all evaluators – both are pure/fast
+ * so we don't need fakes here. If the catalog or evaluators grow expensive, swap with fakes.
  */
 class SimpleTaskEngineTest {
 
@@ -24,10 +31,16 @@ class SimpleTaskEngineTest {
     @Before
     fun setUp() {
         val repo = InMemoryTaskRepository()
-        val evaluator = SimpleAdditionEvaluator()
         engine = SimpleTaskEngine(
             taskRepository = repo,
-            evaluators = setOf(evaluator),
+            evaluators = setOf(
+                SimpleAdditionEvaluator(),
+                SubtractionEvaluator(),
+                MultiplicationEvaluator(),
+                DivisionEvaluator(),
+                ExpressionEvaluator(),
+                LetterTracingEvaluator(),
+            ),
         )
     }
 
@@ -168,9 +181,14 @@ class SimpleTaskEngineTest {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private fun correctAnswerFor(task: pl.kindergate.domain.model.task.Task): String {
-        val content = task.content as pl.kindergate.domain.model.task.TaskContent.SimpleAdditionContent
-        return content.correctAnswer.toString()
+    /** Returns the correct answer string for any task content type. */
+    private fun correctAnswerFor(task: Task): String = when (val c = task.content) {
+        is TaskContent.SimpleAdditionContent  -> c.correctAnswer.toString()
+        is TaskContent.SubtractionContent     -> c.correctAnswer.toString()
+        is TaskContent.MultiplicationContent  -> c.correctAnswer.toString()
+        is TaskContent.DivisionContent        -> c.correctAnswer.toString()
+        is TaskContent.ExpressionContent      -> c.correctAnswer.toString()
+        is TaskContent.LetterTracingContent   -> "100.0" // coverage % – letter tasks need tracing evaluator
     }
 
     companion object {

@@ -22,6 +22,37 @@ sealed class TaskContent {
         val correctAnswer: Int,
     ) : TaskContent()
 
+    /** `minuend − subtrahend = ?`  Used by [TaskType.SIMPLE_SUBTRACTION]. */
+    data class SubtractionContent(
+        val minuend: Int,
+        val subtrahend: Int,
+        val correctAnswer: Int,
+    ) : TaskContent()
+
+    /** `factorA × factorB = ?`  Used by [TaskType.MULTIPLICATION]. */
+    data class MultiplicationContent(
+        val factorA: Int,
+        val factorB: Int,
+        val correctAnswer: Int,
+    ) : TaskContent()
+
+    /** `dividend ÷ divisor = ?`  (always exact integer result)  Used by [TaskType.DIVISION]. */
+    data class DivisionContent(
+        val dividend: Int,
+        val divisor: Int,
+        val correctAnswer: Int,
+    ) : TaskContent()
+
+    /**
+     * Arbitrary math expression with parentheses / mixed operations.
+     * [expression] is a ready-to-display string (e.g. "(2+3)×4").
+     * Used by [TaskType.MIXED_OPERATIONS].
+     */
+    data class ExpressionContent(
+        val expression: String,
+        val correctAnswer: Int,
+    ) : TaskContent()
+
     /**
      * Finger-tracing task: child traces a letter shown as a dashed template.
      * Used by [TaskType.LETTER_TRACING].

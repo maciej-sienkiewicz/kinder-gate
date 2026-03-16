@@ -51,28 +51,85 @@ fun TaskScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         when (state.task.taskType) {
-            TaskType.SIMPLE_ADDITION -> SimpleAdditionTask(
-                content = state.task.content as TaskContent.SimpleAdditionContent,
-                answer = state.currentAnswer,
-                feedback = state.feedback,
-                isIncorrect = state.isIncorrect,
-                onAnswerChange = onAnswerChange,
-                onSubmit = onSubmit,
-            )
+
+            TaskType.SIMPLE_ADDITION -> {
+                val c = state.task.content as TaskContent.SimpleAdditionContent
+                NumericAnswerTask(
+                    question    = "${c.operandA} + ${c.operandB} = ?",
+                    answer      = state.currentAnswer,
+                    feedback    = state.feedback,
+                    isIncorrect = state.isIncorrect,
+                    onAnswerChange = onAnswerChange,
+                    onSubmit    = onSubmit,
+                )
+            }
+
+            TaskType.SIMPLE_SUBTRACTION -> {
+                val c = state.task.content as TaskContent.SubtractionContent
+                NumericAnswerTask(
+                    question    = "${c.minuend} − ${c.subtrahend} = ?",
+                    answer      = state.currentAnswer,
+                    feedback    = state.feedback,
+                    isIncorrect = state.isIncorrect,
+                    onAnswerChange = onAnswerChange,
+                    onSubmit    = onSubmit,
+                )
+            }
+
+            TaskType.MULTIPLICATION -> {
+                val c = state.task.content as TaskContent.MultiplicationContent
+                NumericAnswerTask(
+                    question    = "${c.factorA} × ${c.factorB} = ?",
+                    answer      = state.currentAnswer,
+                    feedback    = state.feedback,
+                    isIncorrect = state.isIncorrect,
+                    onAnswerChange = onAnswerChange,
+                    onSubmit    = onSubmit,
+                )
+            }
+
+            TaskType.DIVISION -> {
+                val c = state.task.content as TaskContent.DivisionContent
+                NumericAnswerTask(
+                    question    = "${c.dividend} ÷ ${c.divisor} = ?",
+                    answer      = state.currentAnswer,
+                    feedback    = state.feedback,
+                    isIncorrect = state.isIncorrect,
+                    onAnswerChange = onAnswerChange,
+                    onSubmit    = onSubmit,
+                )
+            }
+
+            TaskType.MIXED_OPERATIONS -> {
+                val c = state.task.content as TaskContent.ExpressionContent
+                NumericAnswerTask(
+                    question    = "${c.expression} = ?",
+                    answer      = state.currentAnswer,
+                    feedback    = state.feedback,
+                    isIncorrect = state.isIncorrect,
+                    onAnswerChange = onAnswerChange,
+                    onSubmit    = onSubmit,
+                )
+            }
+
             TaskType.LETTER_TRACING -> LetterTracingTask(
-                content = state.task.content as TaskContent.LetterTracingContent,
+                content        = state.task.content as TaskContent.LetterTracingContent,
                 onAnswerChange = onAnswerChange,
-                onSubmit = onSubmit,
+                onSubmit       = onSubmit,
             )
         }
     }
 }
 
-// ── Task type renderers ───────────────────────────────────────────────────────
+// ── Shared numeric-answer renderer ────────────────────────────────────────────
 
+/**
+ * Generic numeric-answer UI: shows [question], an integer input field, optional feedback,
+ * and a submit button. Used by all binary-operation and expression task types.
+ */
 @Composable
-private fun SimpleAdditionTask(
-    content: TaskContent.SimpleAdditionContent,
+private fun NumericAnswerTask(
+    question: String,
     answer: String,
     feedback: String?,
     isIncorrect: Boolean,
@@ -81,16 +138,18 @@ private fun SimpleAdditionTask(
 ) {
     // Question
     Text(
-        text = "${content.operandA} + ${content.operandB} = ?",
+        text = question,
         color = BlockingText,
-        fontSize = 44.sp,
+        fontSize = 40.sp,
         fontWeight = FontWeight.ExtraBold,
         textAlign = TextAlign.Center,
+        lineHeight = 48.sp,
+        modifier = Modifier.fillMaxWidth(),
     )
 
     Spacer(modifier = Modifier.height(24.dp))
 
-    // Answer input – numbers only, max 4 digits
+    // Answer input – numbers only, max 4 digits (negative answers not needed in catalog)
     OutlinedTextField(
         value = answer,
         onValueChange = { input ->

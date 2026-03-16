@@ -10,10 +10,11 @@ package pl.kindergate.domain.model.task
  */
 enum class TaskType {
     SIMPLE_ADDITION,
+    SIMPLE_SUBTRACTION,
+    MULTIPLICATION,
+    DIVISION,
+    MIXED_OPERATIONS,
     LETTER_TRACING,
-    // SIMPLE_SUBTRACTION,
-    // MULTIPLICATION,
-    // DIVISION,
     // WORD_PROBLEM,
     // TRUE_FALSE,
     // MULTIPLE_CHOICE,
