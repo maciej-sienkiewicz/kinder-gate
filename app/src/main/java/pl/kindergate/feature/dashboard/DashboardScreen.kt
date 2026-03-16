@@ -128,7 +128,7 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Monitorowane aplikacje",
+                                text = "Wykluczone z monitorowania",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -140,7 +140,7 @@ fun DashboardScreen(
                         Spacer(Modifier.height(8.dp))
                         if (state.monitoredApps.isEmpty()) {
                             Text(
-                                text = "Brak monitorowanych aplikacji. Dodaj aplikacje, które chcesz ograniczyć.",
+                                text = "Wszystkie aplikacje są monitorowane. Dodaj aplikacje, które chcesz wykluczyć z monitorowania.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

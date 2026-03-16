@@ -11,5 +11,5 @@ data class InstalledApp(
     val label: String,
     val icon: Drawable?,
     val isSystemApp: Boolean,
-    val isMonitored: Boolean = false
+    val isExcluded: Boolean = false
 )

@@ -76,8 +76,8 @@ class MonitorService : Service() {
     private var healthCheckJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
-    // Cached set of monitored packages – refreshed when DB changes
-    @Volatile private var monitoredPackages: Set<String> = emptySet()
+    // Cached set of excluded (blacklisted) packages – refreshed when DB changes
+    @Volatile private var excludedPackages: Set<String> = emptySet()
 
     // Track whether we've launched blocking to avoid duplicate launches
     @Volatile private var isBlockingActive: Boolean = false
@@ -140,9 +140,9 @@ class MonitorService : Service() {
         }
 
         val foregroundPackage = detector.getForegroundPackage() ?: return
-        val isMonitored = foregroundPackage in monitoredPackages
+        val isExcluded = foregroundPackage in excludedPackages
 
-        if (!isMonitored) {
+        if (isExcluded) {
             timer.onNonMonitoredForeground()
             isBlockingActive = false
             return
@@ -252,7 +252,7 @@ class MonitorService : Service() {
     private fun observeMonitoredApps() {
         serviceScope.launch {
             monitoredAppsRepository.observeMonitoredApps().collect { apps ->
-                monitoredPackages = apps.filter { it.isEnabled }.map { it.packageName }.toSet()
+                excludedPackages = apps.filter { it.isEnabled }.map { it.packageName }.toSet()
             }
         }
     }

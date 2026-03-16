@@ -40,7 +40,7 @@ class AppPickerViewModel @Inject constructor(
     private fun loadApps() {
         viewModelScope.launch {
             val apps = getInstalledAppsUseCase()
-            val selectedPackages = apps.filter { it.isMonitored }.map { it.packageName }.toSet()
+            val selectedPackages = apps.filter { it.isExcluded }.map { it.packageName }.toSet()
             _uiState.update { it.copy(apps = apps, selectedPackages = selectedPackages, isLoading = false) }
         }
     }
@@ -67,7 +67,7 @@ class AppPickerViewModel @Inject constructor(
                 manageMonitoredAppsUseCase.saveSelection(
                     packageNames = _uiState.value.selectedPackages,
                     existingApps = _uiState.value.apps
-                        .filter { it.isMonitored }
+                        .filter { it.isExcluded }
                         .map { app ->
                             pl.kindergate.domain.model.MonitoredApp(
                                 packageName = app.packageName,
