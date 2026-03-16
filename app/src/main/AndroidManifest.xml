@@ -31,6 +31,10 @@
     <!-- Wake lock: keep CPU awake during monitoring -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Reorder tasks: allows BlockingActivity to bring itself to front
+         when child tries to navigate away via Home/Recents -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
+
     <application
         android:name=".KinderGateApplication"
         android:allowBackup="false"

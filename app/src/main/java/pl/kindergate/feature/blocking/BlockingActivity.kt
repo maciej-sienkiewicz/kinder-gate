@@ -1,7 +1,10 @@
 package pl.kindergate.feature.blocking
 
+import android.app.ActivityManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -46,6 +49,7 @@ class BlockingActivity : ComponentActivity() {
 
     private var packageName_: String = ""
     private var sessionId: Long = -1L
+    private var isAcknowledged: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,6 +68,7 @@ class BlockingActivity : ComponentActivity() {
 
         packageName_ = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
         sessionId = intent.getLongExtra(EXTRA_SESSION_ID, -1L)
+        isBlockingActiveGlobal = true
 
         setContent {
             KinderGateTheme {
@@ -82,9 +87,33 @@ class BlockingActivity : ComponentActivity() {
     }
 
     private fun onChildAcknowledged() {
+        isAcknowledged = true
+        isBlockingActiveGlobal = false
         // Notify service BEFORE finishing so timer resets before we animate out
         startService(MonitorService.blockAcknowledgedIntent(this))
         finish()
+    }
+
+    /**
+     * When the child navigates away (Home button, Recent Apps), immediately
+     * bring ourselves back to front. This is Layer 2 of bypass prevention:
+     * - Layer 1: MonitorService.tick() re-launches every 1s
+     * - Layer 2: This onStop() gives near-instant response
+     * - Layer 3: AccessibilityService detects window change immediately
+     *
+     * The isAcknowledged guard prevents re-launch when child presses OK.
+     */
+    override fun onStop() {
+        super.onStop()
+        if (!isAcknowledged && !isFinishing) {
+            Log.i(TAG, "onStop: child navigated away, bringing blocking screen back to front")
+            bringToFront()
+        }
+    }
+
+    private fun bringToFront() {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        am.moveTaskToFront(taskId, ActivityManager.MOVE_TASK_WITH_HOME)
     }
 
     // Do not allow back press to dismiss the blocking screen
@@ -94,7 +123,19 @@ class BlockingActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val TAG = "KG_Blocking"
         const val EXTRA_PACKAGE_NAME = "extra_package_name"
         const val EXTRA_SESSION_ID = "extra_session_id"
+
+        /**
+         * Static flag read by KinderGateAccessibilityService to know whether
+         * blocking is active. When true, the accessibility service will
+         * immediately re-launch BlockingActivity on any window change to
+         * a non-KinderGate app – providing near-zero-latency bypass prevention.
+         */
+        @Volatile
+        @JvmStatic
+        var isBlockingActiveGlobal: Boolean = false
+            private set
     }
 }

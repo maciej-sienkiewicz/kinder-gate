@@ -2,7 +2,10 @@ package pl.kindergate.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Intent
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import pl.kindergate.feature.blocking.BlockingActivity
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -49,6 +52,20 @@ class KinderGateAccessibilityService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         if (pkg.isBlank()) return
         lastForegroundPackage.set(pkg)
+
+        // Layer 3 bypass prevention: if blocking is active and the child managed
+        // to bring a non-KinderGate window to front, immediately re-launch the
+        // blocking screen. This fires within milliseconds of the window change,
+        // much faster than the 1-second polling loop in MonitorService.
+        if (BlockingActivity.isBlockingActiveGlobal && !pkg.startsWith(OWN_PACKAGE_PREFIX)) {
+            Log.i(TAG, "Window changed to $pkg during blocking – re-launching block screen")
+            val intent = Intent(this, BlockingActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            startActivity(intent)
+        }
     }
 
     override fun onInterrupt() {
@@ -62,6 +79,9 @@ class KinderGateAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        private const val TAG = "KG_Accessibility"
+        private const val OWN_PACKAGE_PREFIX = "pl.kindergate"
+
         /**
          * Package name of the most recently seen foreground window.
          * Written on main thread from accessibility callback.

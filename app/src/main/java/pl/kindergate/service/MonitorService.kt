@@ -178,10 +178,13 @@ class MonitorService : Service() {
             return
         }
 
-        // If we're already in blocking state, re-launch if child navigated away
+        // If we're already in blocking state, re-launch if child navigated away.
+        // Always re-launch when foreground is not our app – the previous guard
+        // (!isBlockingActive) prevented re-launch because the flag was never reset
+        // when the child navigated away via Home/Recents.
         if (timer.getCurrentState() == SessionTimer.State.BLOCKING) {
-            if (foregroundPackage != packageName && !isBlockingActive) {
-                Log.i(TAG, "tick: re-launching block screen for $foregroundPackage")
+            if (foregroundPackage != packageName) {
+                Log.i(TAG, "tick: re-launching block screen (child navigated to $foregroundPackage)")
                 launchBlockingScreen(foregroundPackage)
             }
             return
