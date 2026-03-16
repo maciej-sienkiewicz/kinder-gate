@@ -79,6 +79,11 @@ class MonitorService : Service() {
     // Cached set of excluded (blacklisted) packages – refreshed when DB changes
     @Volatile private var excludedPackages: Set<String> = emptySet()
 
+    // Last known permission states for change detection (avoid duplicate tamper events)
+    @Volatile private var lastUsageStatsGranted: Boolean = true
+    @Volatile private var lastOverlayGranted: Boolean = true
+    @Volatile private var lastAccessibilityEnabled: Boolean = true
+
     // Track whether we've launched blocking to avoid duplicate launches
     @Volatile private var isBlockingActive: Boolean = false
 
@@ -207,20 +212,23 @@ class MonitorService : Service() {
     private suspend fun checkPermissionHealth() {
         val status = configRepository.getPermissionStatus()
 
-        if (!status.isUsageStatsGranted) {
+        // Only log when state transitions from granted → revoked (not on every tick)
+        if (!status.isUsageStatsGranted && lastUsageStatsGranted) {
             recordTamperEvent(TamperType.USAGE_STATS_REVOKED)
             sendTamperNotification()
         }
+        lastUsageStatsGranted = status.isUsageStatsGranted
 
-        if (!status.isOverlayGranted) {
+        if (!status.isOverlayGranted && lastOverlayGranted) {
             recordTamperEvent(TamperType.OVERLAY_PERMISSION_REVOKED)
         }
+        lastOverlayGranted = status.isOverlayGranted
 
-        if (!status.isAccessibilityEnabled) {
+        if (!status.isAccessibilityEnabled && lastAccessibilityEnabled) {
             // Accessibility is optional but its revocation is still worth noting
-            // Don't send alert for this one to avoid crying wolf
             recordTamperEvent(TamperType.ACCESSIBILITY_DISABLED)
         }
+        lastAccessibilityEnabled = status.isAccessibilityEnabled
     }
 
     private suspend fun recordTamperEvent(type: TamperType) {
